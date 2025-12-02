@@ -1,0 +1,75 @@
+# Build directories
+build/
+cmake-build-*/
+CMakeFiles/
+cmake_install.cmake
+CMakeCache.txt
+Makefile
+*.cbp
+*.cmake
+
+# Compiled binaries
+fracessa.exe
+REF_linux64.exe
+REF_win64.exe
+REF.exe
+*.o
+*.so
+*.dylib
+*.dll
+*.lib
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+fracessa.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+.git
+.mypy_cache
+.pytest_cache
+.hypothesis
+
+# Backup files
+*.bak
+*.backup
+*~
+zzz_altes_zeug.tar.gz
+old_code_backup.tar.gz
+
+# Third-party archives
+*.tar.gz
+*.zip
