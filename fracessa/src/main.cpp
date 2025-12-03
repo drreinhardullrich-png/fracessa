@@ -48,16 +48,22 @@ int main(int argc, char *argv[])
     auto exact = program.get<bool>("--exact");
     auto fullsupport = program.get<bool>("--fullsupport");
 
-    ::matrix<rational> A = ::matrix<rational>::create_from_cli_string(matrix_str);
-    ess_finder x = ess_finder(A, candidates, exact, fullsupport, logger);
+    try {
+        ::matrix<rational> A = ::matrix<rational>::create_from_cli_string(matrix_str);
+        ess_finder x = ess_finder(A, candidates, exact, fullsupport, logger);
 
-    std::cout << x.ess_count << std::endl;
+        std::cout << x.get_ess_count() << std::endl;
 
-    if (candidates) {
-        std::cout << candidate::header() << std::endl;
-        for (auto c: x.candidates) {
-            std::cout << c.to_string() << std::endl;
+        if (candidates) {
+            std::cout << candidate::header() << std::endl;
+            for (const auto& c : x.get_candidates()) {
+                std::cout << c.to_string() << std::endl;
+            }
         }
+    }
+    catch (const std::runtime_error& err) {
+        std::cerr << "Error: " << err.what() << std::endl;
+        return EXIT_FAILURE;
     }
 
     return EXIT_SUCCESS;

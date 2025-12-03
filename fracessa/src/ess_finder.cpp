@@ -1,9 +1,7 @@
 #include <fracessa/ess_finder.hpp>
 
-ess_finder::ess_finder(const matrix<rational>& matrix, bool with_candidates, bool exact, bool full_support, bool with_log)
+ess_finder::ess_finder(const matrix<rational>& matrix, bool with_candidates, bool exact, bool full_support, bool with_log) : game_matrix(matrix)
 {
-
-    game_matrix = matrix;
     conf_with_candidates = with_candidates;
     conf_exact = exact;
     conf_full_support = full_support;
@@ -19,7 +17,7 @@ ess_finder::ess_finder(const matrix<rational>& matrix, bool with_candidates, boo
         candidates.reserve(CANDIDATE_RESERVE_MULTIPLIER * dimension);
 
     if (conf_with_log) {
-        _log.emplace("fracessa.log");
+        _log = std::make_unique<Logger>("fracessa.log");
         *_log << "n=" << dimension << std::endl << "game matrix:" << std::endl;
         game_matrix.stream_matrix(*_log);
     }
@@ -69,7 +67,7 @@ void ess_finder::search_support_size(size_t support_size) //uses real supportsiz
     matrix<double> le_matrix_double = matrix<double>(support_size + LE_MATRIX_EXTRA_ROWS, support_size + LE_MATRIX_EXTRA_COLS);
     matrix<rational> le_matrix_rational = matrix<rational>(support_size + LE_MATRIX_EXTRA_ROWS, support_size + LE_MATRIX_EXTRA_COLS);
 
-    if (conf_with_log && _log.has_value())
+    if (conf_with_log && _log->is_enabled())
         *_log << std::endl << "Searching support size " << support_size << std::endl;
 
     for (auto support : _supports[support_size-1]) {
@@ -77,13 +75,13 @@ void ess_finder::search_support_size(size_t support_size) //uses real supportsiz
         _c.support = support;
 
         if (!conf_exact) {
-            if (conf_with_log && _log.has_value())
+            if (conf_with_log && _log->is_enabled())
                 *_log << "[" << _c.support << "]";
             if (!find_candidate_double(le_matrix_double))
                 continue;
         }
 
-        if (conf_with_log && _log.has_value())
+        if (conf_with_log && _log->is_enabled())
             *_log << "[rational: " << _c.support << "]";
 
         if (!find_candidate_rational(le_matrix_rational))
@@ -91,7 +89,7 @@ void ess_finder::search_support_size(size_t support_size) //uses real supportsiz
 
         _c.candidate_id++;
 
-        if (conf_with_log && _log.has_value())
+        if (conf_with_log && _log->is_enabled())
             *_log << std::endl << "Found candidate! Check stability:" << std::endl;
 
         check_stability();
@@ -107,7 +105,7 @@ void ess_finder::search_support_size(size_t support_size) //uses real supportsiz
         if (conf_with_candidates)
             candidates.push_back(_c);
 
-        if (conf_with_log && _log.has_value()) {
+        if (conf_with_log && _log->is_enabled()) {
             *_log << candidate::header() << std::endl;
             *_log << _c.to_string() << std::endl << std::endl;
         }
@@ -138,7 +136,7 @@ void ess_finder::search_support_size(size_t support_size) //uses real supportsiz
                     _c.extended_support = shift_right(_c.extended_support,dimension);
                     candidates.push_back(_c);
 
-                    if (conf_with_log && _log.has_value()) {
+                    if (conf_with_log && _log->is_enabled()) {
                         *_log << candidate::header() << std::endl;
                         *_log << _c.to_string() << std::endl << std::endl;
                     }
@@ -345,7 +343,7 @@ void ess_finder::check_stability()
     size_t m = postion_of_lowest_setbit(bitsetm);
     size_t extended_support_size_reduced = _c.extended_support_size - 1;
 
-    if (conf_with_log && _log.has_value()) {
+    if (conf_with_log && _log->is_enabled()) {
         *_log << "Support: " << std::bitset<64>(_c.support) << std::endl;
         *_log << "Support size: " << support_size_from_int(_c.support) << std::endl;
         *_log << "Extended support: " << std::bitset<64>(_c.extended_support) << std::endl;
@@ -357,7 +355,7 @@ void ess_finder::check_stability()
     if (extended_support_size_reduced == 0)
     {
 
-        if (conf_with_log && _log.has_value())
+        if (conf_with_log && _log->is_enabled())
             *_log << "Reason: true_pure_ess" << std::endl;
         _c.reason_ess = ReasonEss::true_pure_ess;
         _c.is_ess = true;
@@ -380,7 +378,7 @@ void ess_finder::check_stability()
             row += 1;
         }
 
-    if (conf_with_log && _log.has_value()) {
+    if (conf_with_log && _log->is_enabled()) {
         *_log << "matrix bee: " << std::endl;
         bee.stream_matrix(*_log);
     }
@@ -388,7 +386,7 @@ void ess_finder::check_stability()
     if (!conf_exact) {
         if (bee.to_double().is_positive_definite_double()) {
 
-            if (conf_with_log && _log.has_value())
+            if (conf_with_log && _log->is_enabled())
                 *_log << "Reason: true_posdef_double" << std::endl;
             _c.reason_ess = ReasonEss::true_posdef_double;
             _c.is_ess = true;
@@ -398,7 +396,7 @@ void ess_finder::check_stability()
 
     if (bee.is_positive_definite()) {
 
-        if (conf_with_log && _log.has_value())
+        if (conf_with_log && _log->is_enabled())
             *_log << "Reason: true_posdef_rational" << std::endl;
         _c.reason_ess = ReasonEss::true_posdef_rational;
         _c.is_ess = true;
@@ -408,11 +406,11 @@ void ess_finder::check_stability()
     uint64_t kay = (_c.extended_support & (~_c.support)); //extended_support without support
     size_t kay_size = support_size_from_int(kay);
 
-    if (conf_with_log && _log.has_value())
+    if (conf_with_log && _log->is_enabled())
         *_log << "kay: " << std::bitset<64>(kay) << std::endl;
 
     if (kay_size==0 || kay_size==1) {
-        if (conf_with_log && _log.has_value())
+        if (conf_with_log && _log->is_enabled())
             *_log << "Reason: false_not_posdef_and_kay_0_1" << std::endl;
         _c.reason_ess = ReasonEss::false_not_posdef_and_kay_0_1;
         _c.is_ess = false;
@@ -434,7 +432,7 @@ void ess_finder::check_stability()
     jay_without_kay_vee[0] = jay & (~kay);
     bee_vee[0] = bee;
 
-    if (conf_with_log && _log.has_value()) {
+    if (conf_with_log && _log->is_enabled()) {
         *_log << "Partial Copositivity Check:" << std::endl;
         *_log << "v=0:" << std::endl;
         *_log << "kay_vee[0]: " << std::bitset<64>(kay_vee[0]) << std::endl;
@@ -467,7 +465,7 @@ void ess_finder::check_stability()
             iterater++;
         }
 
-        if (conf_with_log && _log.has_value()) {
+        if (conf_with_log && _log->is_enabled()) {
             *_log << "v=" << v << ":" << std::endl;
             *_log << "kay_vee: " << std::bitset<64>(kay_vee[v]) << std::endl;
             *_log << "kay_vee_size: " << kay_vee_size[v] << std::endl;
@@ -478,7 +476,7 @@ void ess_finder::check_stability()
 
         if (bee_vee[v-1](index_position_to_remove,index_position_to_remove) <=0) {
 
-            if (conf_with_log && _log.has_value())
+            if (conf_with_log && _log->is_enabled())
                 *_log << "Reason: false_not_partial_copositive" << std::endl;
             _c.reason_ess = ReasonEss::false_not_partial_copositive;
             _c.is_ess = false;
@@ -496,24 +494,24 @@ void ess_finder::check_stability()
             }
         }
 
-        if (conf_with_log && _log.has_value()) {
+        if (conf_with_log && _log->is_enabled()) {
             *_log << "bee_vee:" << std::endl;
             bee_vee[v].stream_matrix(*_log);
         }
     }
 
     //copositivity check as in hadeler_1983
-    if (conf_with_log && _log.has_value())
+    if (conf_with_log && _log->is_enabled())
         *_log << "Copositivity Check:" << std::endl;
 
     if (bee_vee[r].is_copositive()) {
-        if (conf_with_log && _log.has_value())
+        if (conf_with_log && _log->is_enabled())
             *_log << "Reason: true_copositive" << std::endl;
         _c.reason_ess = ReasonEss::true_copositive;
         _c.is_ess = true;
         return;
     } else {
-        if (conf_with_log && _log.has_value())
+        if (conf_with_log && _log->is_enabled())
             *_log << "Reason: false_not_copositive" << std::endl;
         _c.reason_ess = ReasonEss::false_not_copositive;
         _c.is_ess = false;
