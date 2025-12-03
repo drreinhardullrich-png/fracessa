@@ -70,6 +70,9 @@ coverage.xml
 zzz_altes_zeug.tar.gz
 old_code_backup.tar.gz
 
+# Third-party dependencies (download separately)
+third_party/
+
 # Third-party archives
 *.tar.gz
 *.zip

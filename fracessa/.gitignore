@@ -1,0 +1,54 @@
+# Build directories
+build/
+build_linux64/
+build_win64/
+zzz_obj/
+zzz_bin/
+
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.cmake
+
+# Compiled binaries
+REF_linux64.exe
+REF_win64.exe
+REF.exe
+
+# IDE files
+*.cbp
+*.layout
+*.depend
+
+# Log files
+Log.txt
+callgrind.out.*
+
+# Temporary files
+*.tmp
+*.save
+temp.cpp
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Backup files
+*.bak
+*.orig
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Compiled object files
+*.o
+*.obj
+
+# Debug/Release directories
+Debug/
+Release/
