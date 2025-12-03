@@ -486,15 +486,15 @@ public:
         // Use template specialization to choose appropriate algorithm
         return is_positive_definite_impl(*this);
     }
-
+    
     // Determinant (only for rational matrices to avoid precision issues)
     template <typename U = T>
-    std::enable_if_t<std::is_same_v<U, fracessa::rational>, fracessa::rational>
+    std::enable_if_t<std::is_same_v<U, fracessa::rational>, fracessa::rational> 
     determinant() const {
         if (!is_square()) {
             throw matrix_error("Determinant requires square matrix");
         }
-
+        
         // Use LU decomposition for numerical stability
         return lu_determinant();
     }
@@ -740,7 +740,7 @@ private:
 
         return true;  // Matrix passed all positive definiteness checks
     }
-
+    
     void check_bounds(size_type row, size_type col) const {
         if (row >= _rows || col >= _cols) {
             throw std::out_of_range(

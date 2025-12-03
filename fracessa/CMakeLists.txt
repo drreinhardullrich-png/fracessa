@@ -30,6 +30,9 @@ else()
     message(FATAL_ERROR "Local Boost headers not found!")
 endif()
 
+# Python bindings (optional)
+# find_package(pybind11 CONFIG QUIET)
+
 # Build the core library
 add_library(fracessa_lib
     src/ess_finder.cpp
@@ -69,6 +72,16 @@ if(UNIX AND NOT APPLE)
         LIBRARY DESTINATION lib
         ARCHIVE DESTINATION lib
     )
+
+# Python bindings (commented out - using Python wrapper instead)
+# if(pybind11_FOUND)
+#     pybind11_add_module(fracessa_py src/bindings.cpp)
+#     target_link_libraries(fracessa_py PRIVATE fracessa_lib)
+#     set_target_properties(fracessa_py PROPERTIES
+#         OUTPUT_NAME "fracessa"
+#         LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
+#     )
+# endif()
 
 elseif(WIN32 OR MSVC OR MSYS OR MINGW)
     # Windows-specific linker flags
