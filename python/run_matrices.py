@@ -48,6 +48,115 @@ def candidate_to_comparison_key(candidate):
     )
 
 
+def compare_runtimes(results, baseline_file):
+    """
+    Compare runtimes of current run against baseline JSON file.
+    
+    Args:
+        results: List of result dicts from current run
+        baseline_file: Path to baseline JSON file
+        
+    Returns:
+        dict with runtime comparison results
+    """
+    # Check if baseline file exists
+    if not baseline_file.exists():
+        return {
+            "status": "SKIPPED",
+            "reason": f"Baseline file not found: {baseline_file}",
+            "compared": 0,
+            "faster": 0,
+            "slower": 0,
+            "same": 0,
+            "details": []
+        }
+    
+    # Load baseline results
+    try:
+        with open(baseline_file, 'r') as f:
+            baseline_data = json.load(f)
+        baseline_results = baseline_data.get('results', [])
+    except Exception as e:
+        return {
+            "status": "ERROR",
+            "reason": f"Failed to load baseline file: {e}",
+            "compared": 0,
+            "faster": 0,
+            "slower": 0,
+            "same": 0,
+            "details": []
+        }
+    
+    # Create lookup dict for baseline timings
+    baseline_timings = {}
+    for result in baseline_results:
+        matrix_id = result.get('id')
+        if result.get('result', {}).get('success'):
+            baseline_timings[matrix_id] = result['result'].get('timing', 0.0)
+    
+    # Compare current runtimes with baseline
+    compared = 0
+    faster = 0
+    slower = 0
+    same = 0
+    details = []
+    
+    for result in results:
+        matrix_id = result.get('id')
+        current_result = result.get('result', {})
+        
+        if not current_result.get('success'):
+            continue  # Skip failed matrices
+        
+        if matrix_id not in baseline_timings:
+            continue  # Skip matrices not in baseline
+        
+        current_timing = current_result.get('timing', 0.0)
+        baseline_timing = baseline_timings[matrix_id]
+        
+        compared += 1
+        
+        if baseline_timing == 0:
+            # Avoid division by zero
+            if current_timing == 0:
+                same += 1
+                speedup = 1.0
+            else:
+                slower += 1
+                speedup = float('inf')
+        else:
+            speedup = baseline_timing / current_timing if current_timing > 0 else float('inf')
+            
+            if abs(current_timing - baseline_timing) < 0.001:  # Consider same if within 1ms
+                same += 1
+            elif current_timing < baseline_timing:
+                faster += 1
+            else:
+                slower += 1
+        
+        details.append({
+            "matrix_id": matrix_id,
+            "dimension": result.get('dimension'),
+            "current_timing": current_timing,
+            "baseline_timing": baseline_timing,
+            "speedup": speedup if speedup != float('inf') else None,
+            "slower_by": current_timing - baseline_timing if current_timing > baseline_timing else None,
+            "faster_by": baseline_timing - current_timing if current_timing < baseline_timing else None
+        })
+    
+    # Sort details by speedup ratio (best improvements first)
+    details.sort(key=lambda x: x.get('speedup') or 0, reverse=True)
+    
+    return {
+        "status": "SUCCESS",
+        "compared": compared,
+        "faster": faster,
+        "slower": slower,
+        "same": same,
+        "details": details
+    }
+
+
 def verify_against_baseline(all_candidates, baseline_file):
     """
     Verify produced candidates against baseline CSV.
@@ -260,7 +369,8 @@ def main():
     results_dir.mkdir(exist_ok=True)
     results_file = results_dir / f"fracessa_verification_result_{timestamp}.json"
     candidates_file = results_dir / f"fracessa_verification_candidates_{timestamp}.csv"
-    baseline_file = script_dir / "test" / "fracessa_verification_candidates_baseline.csv"
+    baseline_candidates_file = script_dir / "test" / "fracessa_verification_candidates_baseline.csv"
+    baseline_results_file = script_dir / "test" / "fracessa_verification_result_baseline.json"
 
     # Check if matrices file exists
     if not matrices_file.exists():
@@ -399,17 +509,59 @@ def main():
             if not result["result"]["success"]:
                 print(f"  ID {result['id']}: {result['result']['error']}")
 
+    # Compare runtimes with baseline
+    print("\n" + "="*60)
+    print("RUNTIME COMPARISON")
+    print("="*60)
+    
+    runtime_comparison = compare_runtimes(results, baseline_results_file)
+    
+    if runtime_comparison["status"] == "SKIPPED":
+        print(f"⚠️  {runtime_comparison['reason']}")
+    elif runtime_comparison["status"] == "ERROR":
+        print(f"❌ {runtime_comparison['reason']}")
+    else:
+        print(f"Baseline file: {baseline_results_file}")
+        print(f"Matrices compared: {runtime_comparison['compared']}")
+        
+        if runtime_comparison['compared'] > 0:
+            # Sort details by matrix ID
+            sorted_details = sorted(runtime_comparison['details'], key=lambda x: x['matrix_id'])
+            
+            print(f"\nRuntime comparison (current - baseline, in seconds):")
+            print(f"{'Matrix ID':<10} {'Dimension':<10} {'Baseline (s)':<15} {'Current (s)':<15} {'Difference (s)':<15}")
+            print("-" * 70)
+            
+            for detail in sorted_details:
+                matrix_id = detail['matrix_id']
+                dimension = detail['dimension']
+                baseline_timing = detail['baseline_timing']
+                current_timing = detail['current_timing']
+                difference = current_timing - baseline_timing
+                
+                # Format difference with sign
+                if difference > 0:
+                    diff_str = f"+{difference:.6f}"
+                elif difference < 0:
+                    diff_str = f"{difference:.6f}"
+                else:
+                    diff_str = "0.000000"
+                
+                print(f"{matrix_id:<10} {dimension:<10} {baseline_timing:<15.6f} {current_timing:<15.6f} {diff_str:<15}")
+    
+    print("="*60)
+    
     # Verify against baseline
     print("\n" + "="*60)
     print("BASELINE VERIFICATION")
     print("="*60)
     
-    verification = verify_against_baseline(all_candidates, baseline_file)
+    verification = verify_against_baseline(all_candidates, baseline_candidates_file)
     
     if verification["status"] == "SKIPPED":
         print(f"⚠️  {verification['reason']}")
     else:
-        print(f"Baseline file: {baseline_file}")
+        print(f"Baseline file: {baseline_candidates_file}")
         print(f"Matrices verified: {verification['verified']}")
         print(f"Passed: {verification['passed']}")
         print(f"Failed: {verification['failed']}")

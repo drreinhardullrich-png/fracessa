@@ -39,17 +39,17 @@ fracessa::fracessa(const matrix<rational>& matrix, bool with_candidates, bool ex
         for (size_t i=0; i<dimension; i++)
             _coprime_sizes[i] = (boost::integer::gcd(i+1, dimension) == 1); //support size and dimension are coprime
 
-        bitset64::iterate_all_supports(dimension, [&](const bitset64& support) {
+        bitset64::iterate_all_supports(dimension, [&](const bitset64& support, unsigned nbits) {
             size_t support_size_minus_one = support.count() - 1;
             if (_coprime_sizes[support_size_minus_one]) {
-                if (support.smallest_representation().to_uint64() == support.to_uint64())
+                if (support.smallest_representation(nbits).to_uint64() == support.to_uint64())
                     (_supports[support_size_minus_one]).push_back(support);
             } else {
                 (_supports[support_size_minus_one]).push_back(support);
             }
         });
 	} else {
-        bitset64::iterate_all_supports(dimension, [&](const bitset64& support) {
+        bitset64::iterate_all_supports(dimension, [&](const bitset64& support, unsigned) {
             (_supports[support.count() - 1]).push_back(support);
         });
 	}
@@ -139,7 +139,7 @@ void fracessa::search_support_size(size_t support_size) //uses real supportsize 
 
             for (size_t i=0; i<dimension-1;i++) {
 
-                _c.support = _c.support.rot_r(1);
+                _c.support = _c.support.rot_r(1, dimension);
 
                 _c.candidate_id++;
 
@@ -149,7 +149,7 @@ void fracessa::search_support_size(size_t support_size) //uses real supportsize 
                 if (conf_with_candidates) {
 
                     std::rotate(_c.vector.begin(), _c.vector.begin() + 1, _c.vector.end());
-                    _c.extended_support = _c.extended_support.rot_r(1);
+                    _c.extended_support = _c.extended_support.rot_r(1, dimension);
                     candidates.push_back(_c);
 
                     if (conf_with_log && _logger) {
@@ -355,16 +355,16 @@ bool fracessa::find_candidate_rational(matrix<rational> &le_matrix)
 void fracessa::check_stability()
 {
     bitset64 bitsetm = _c.support.lowest_set_bit(); //get lowest set bit as bitfield
-    bitset64 extended_support_reduced = _c.extended_support.subtract(bitsetm); //ext support without m
+    bitset64 extended_support_reduced = _c.extended_support.subtract(bitsetm, dimension); //ext support without m
     size_t m = _c.support.find_first();
     size_t extended_support_size_reduced = _c.extended_support_size - 1;
 
     if (conf_with_log && _logger) {
-        _logger->info("Support: {}", std::bitset<64>(_c.support.to_uint64()).to_string());
+        _logger->info("Support: {}", _c.support.to_bitstring(dimension));
         _logger->info("Support size: {}", _c.support.count());
-        _logger->info("Extended support: {}", std::bitset<64>(_c.extended_support.to_uint64()).to_string());
+        _logger->info("Extended support: {}", _c.extended_support.to_bitstring(dimension));
         _logger->info("Extended support size: {}", _c.extended_support_size);
-        _logger->info("Extended support reduced: {}", std::bitset<64>(extended_support_reduced.to_uint64()).to_string());
+        _logger->info("Extended support reduced: {}", extended_support_reduced.to_bitstring(dimension));
         _logger->info("index m: {}", m);
     }
 
@@ -418,11 +418,11 @@ void fracessa::check_stability()
         return;
     }
 
-    bitset64 kay = _c.extended_support.subtract(_c.support); //extended_support without support
+    bitset64 kay = _c.extended_support.subtract(_c.support, dimension); //extended_support without support
     size_t kay_size = kay.count();
 
     if (conf_with_log && _logger)
-        _logger->info("kay: {}", std::bitset<64>(kay.to_uint64()).to_string());
+        _logger->info("kay: {}", kay.to_bitstring(dimension));
 
     if (kay_size==0 || kay_size==1) {
         if (conf_with_log && _logger)
@@ -434,7 +434,7 @@ void fracessa::check_stability()
 
     //do partial copositivity-check as in bomze_1992, p. 321/322
     bitset64 jay = extended_support_reduced;
-    bitset64 jay_minus_kay = jay.subtract(kay);
+    bitset64 jay_minus_kay = jay.subtract(kay, dimension);
     size_t r = jay_minus_kay.count();
 
     std::vector<bitset64> kay_vee(r+1);
@@ -451,9 +451,9 @@ void fracessa::check_stability()
     if (conf_with_log && _logger) {
         _logger->info("Partial Copositivity Check:");
         _logger->info("v=0:");
-        _logger->info("kay_vee[0]: {}", std::bitset<64>(kay_vee[0].to_uint64()).to_string());
+        _logger->info("kay_vee[0]: {}", kay_vee[0].to_bitstring(dimension));
         _logger->info("kay_vee_size[0]: {}", kay_vee_size[0]);
-        _logger->info("jay_without_kay_vee[0]: {}", std::bitset<64>(jay_without_kay_vee[0].to_uint64()).to_string());
+        _logger->info("jay_without_kay_vee[0]: {}", jay_without_kay_vee[0].to_bitstring(dimension));
         _logger->info("r: {}", r);
         _logger->info("bee_vee[0]:\n{}", bee_vee[0].to_string());
     }
@@ -461,8 +461,8 @@ void fracessa::check_stability()
     for (size_t v=1; v<=r; v++) {
 
         bitset64 iv = jay_without_kay_vee[v-1].lowest_set_bit(); //iv is lowest set bit!
-        jay_without_kay_vee[v] = jay_without_kay_vee[v-1].subtract(iv); //remove iv from jay\kay
-        kay_vee[v] = kay_vee[v-1].subtract(iv); //build kay_vee
+        jay_without_kay_vee[v] = jay_without_kay_vee[v-1].subtract(iv, dimension); //remove iv from jay\kay
+        kay_vee[v] = kay_vee[v-1].subtract(iv, dimension); //build kay_vee
         kay_vee_size[v] = kay_vee_size[v-1]-1; //kay_vee_size
         bee_vee[v] = matrix<rational>(kay_vee_size[v],kay_vee_size[v]);
 
@@ -477,10 +477,10 @@ void fracessa::check_stability()
 
         if (conf_with_log && _logger) {
             _logger->info("v={}:", v);
-            _logger->info("kay_vee: {}", std::bitset<64>(kay_vee[v].to_uint64()).to_string());
+            _logger->info("kay_vee: {}", kay_vee[v].to_bitstring(dimension));
             _logger->info("kay_vee_size: {}", kay_vee_size[v]);
-            _logger->info("jay_without_kay_vee: {}", std::bitset<64>(jay_without_kay_vee[v].to_uint64()).to_string());
-            _logger->info("iv: {}", std::bitset<64>(iv.to_uint64()).to_string());
+            _logger->info("jay_without_kay_vee: {}", jay_without_kay_vee[v].to_bitstring(dimension));
+            _logger->info("iv: {}", iv.to_bitstring(dimension));
             _logger->info("Real index (distance) to remove: {}", index_position_to_remove);
         }
 
