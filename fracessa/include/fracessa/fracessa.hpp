@@ -9,6 +9,7 @@
 
 #include <fracessa/matrix.hpp>
 #include <fracessa/candidate.hpp>
+#include <fracessa/bitset64.hpp>
 
 
 class fracessa
@@ -34,7 +35,7 @@ class fracessa
 
         candidate _c;
 
-        std::vector< std::vector<uint64_t>> _supports;
+        std::vector< std::vector<bitset64>> _supports;
         std::vector<bool> _coprime_sizes;
 
         std::shared_ptr<spdlog::logger> _logger;

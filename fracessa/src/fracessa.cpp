@@ -14,7 +14,7 @@ fracessa::fracessa(const matrix<rational>& matrix, bool with_candidates, bool ex
         game_matrix_double = game_matrix.to_double();
 
     dimension = matrix.rows();
-    _supports = std::vector< std::vector<uint64_t>>(dimension);
+    _supports = std::vector< std::vector<bitset64>>(dimension);
 
     if (conf_with_candidates)
         candidates.reserve(CANDIDATE_RESERVE_MULTIPLIER * dimension);
@@ -39,19 +39,19 @@ fracessa::fracessa(const matrix<rational>& matrix, bool with_candidates, bool ex
         for (size_t i=0; i<dimension; i++)
             _coprime_sizes[i] = (boost::integer::gcd(i+1, dimension) == 1); //support size and dimension are coprime
 
-        for (uint64_t i=1ull; i<(1ull<<dimension); i++) {
-            size_t support_size_minus_one = support_size_from_int(i)-1;
+        bitset64::iterate_all_supports(dimension, [&](const bitset64& support) {
+            size_t support_size_minus_one = support.count() - 1;
             if (_coprime_sizes[support_size_minus_one]) {
-                if (smallest_representation(i, dimension) == i)
-                    (_supports[support_size_minus_one]).push_back(i);
+                if (support.smallest_representation().to_uint64() == support.to_uint64())
+                    (_supports[support_size_minus_one]).push_back(support);
             } else {
-                (_supports[support_size_minus_one]).push_back(i);
+                (_supports[support_size_minus_one]).push_back(support);
             }
-        }
+        });
 	} else {
-        for (uint64_t i=1ull; i<(1ull<<dimension); i++) {
-            (_supports[support_size_from_int(i)-1]).push_back(i);
-        }
+        bitset64::iterate_all_supports(dimension, [&](const bitset64& support) {
+            (_supports[support.count() - 1]).push_back(support);
+        });
 	}
 
     if (conf_full_support) {
@@ -85,7 +85,7 @@ void fracessa::search_support_size(size_t support_size) //uses real supportsize 
         std::string support_log_msg;
         if (!conf_exact) {
             if (conf_with_log && _logger) {
-                support_log_msg = "[" + std::to_string(_c.support) + "]";
+                support_log_msg = "[" + std::to_string(_c.support.to_uint64()) + "]";
             }
             if (!find_candidate_double(le_matrix_double))
                 continue;
@@ -94,9 +94,9 @@ void fracessa::search_support_size(size_t support_size) //uses real supportsize 
         if (conf_with_log && _logger) {
             // Combine support and rational messages like the old format
             if (!conf_exact) {
-                _logger->info("{}[rational: {}]", support_log_msg, _c.support);
+                _logger->info("{}[rational: {}]", support_log_msg, _c.support.to_uint64());
             } else {
-                _logger->info("[rational: {}]", _c.support);
+                _logger->info("[rational: {}]", _c.support.to_uint64());
             }
         }
 
@@ -131,7 +131,7 @@ void fracessa::search_support_size(size_t support_size) //uses real supportsize 
             _supports[i].erase(std::remove_if(
                 _supports[i].begin(),
                 _supports[i].end(),
-                [=](const uint64_t& x) {return ((_c.support & x) == _c.support);}),
+                [=](const bitset64& x) {return _c.support.is_subset_of(x);}),
                 _supports[i].end());
         }
 
@@ -139,7 +139,7 @@ void fracessa::search_support_size(size_t support_size) //uses real supportsize 
 
             for (size_t i=0; i<dimension-1;i++) {
 
-                _c.support = shift_right(_c.support,dimension);
+                _c.support = _c.support.rot_r(1);
 
                 _c.candidate_id++;
 
@@ -149,7 +149,7 @@ void fracessa::search_support_size(size_t support_size) //uses real supportsize 
                 if (conf_with_candidates) {
 
                     std::rotate(_c.vector.begin(), _c.vector.begin() + 1, _c.vector.end());
-                    _c.extended_support = shift_right(_c.extended_support,dimension);
+                    _c.extended_support = _c.extended_support.rot_r(1);
                     candidates.push_back(_c);
 
                     if (conf_with_log && _logger) {
@@ -163,7 +163,7 @@ void fracessa::search_support_size(size_t support_size) //uses real supportsize 
                     _supports[i].erase(std::remove_if(
                         _supports[i].begin(),
                         _supports[i].end(),
-                        [=](const uint64_t& x) {return ((_c.support & x) == _c.support);}),
+                        [=](const bitset64& x) {return _c.support.is_subset_of(x);}),
                         _supports[i].end());
                 }
             }
@@ -180,8 +180,7 @@ bool fracessa::find_candidate_double(matrix<double> &le_matrix)
     std::vector<double> result_le = std::vector<double>(n, 0.);
     std::vector<double> result_vector = std::vector<double>(dimension);
 
-    bitset64 support_bitset = bitset64::from_mask(dimension, _c.support);
-    game_matrix_double.get_le_matrix(support_bitset, _c.support_size, le_matrix);
+    game_matrix_double.get_le_matrix(_c.support, _c.support_size, le_matrix);
 
     ////////////////////////////////////////////////////////////////////////// gauss with partial pivoting
     for (int i=0; i<n; i++) {
@@ -227,7 +226,7 @@ bool fracessa::find_candidate_double(matrix<double> &le_matrix)
     //build large vector, if none of the elements is too negative
     size_t tracker = 0;
     for (size_t i = 0; i < dimension; i++) {
-        if ((_c.support & (1ull << i)) != 0) {
+        if (_c.support.test(i)) {
             double x = result_le[tracker];
             if (x > -1e-5)
                 result_vector[i] = x;
@@ -243,10 +242,10 @@ bool fracessa::find_candidate_double(matrix<double> &le_matrix)
     double errorbound_rowsum=5e-5*dimension;
 
     for (size_t i = 0; i < dimension; i++) {
-        if ((_c.support & (1ull << i)) == 0) { //not in the support - rows
+        if (!_c.support.test(i)) { //not in the support - rows
             double rowsum = 0.;
             for (size_t j = 0; j < dimension; j++)
-                if ((_c.support & (1ull << j)) != 0) // is in the support - columns
+                if (_c.support.test(j)) // is in the support - columns
                     rowsum += game_matrix_double(i,j) * result_vector[j];
 
             if (!(rowsum <= result_le[_c.support_size] + errorbound_rowsum))
@@ -264,8 +263,7 @@ bool fracessa::find_candidate_rational(matrix<rational> &le_matrix)
     std::vector<rational> result_le= std::vector<rational>(n, 0);
     std::vector<rational> result_vector= std::vector<rational>(dimension);
 
-    bitset64 support_bitset = bitset64::from_mask(dimension, _c.support);
-    game_matrix.get_le_matrix(support_bitset, _c.support_size, le_matrix);
+    game_matrix.get_le_matrix(_c.support, _c.support_size, le_matrix);
 
     ////////////////////////////////////////////////////////////////////////// gauss with partial pivoting
     for (int i=0; i<n; i++) {
@@ -313,7 +311,7 @@ bool fracessa::find_candidate_rational(matrix<rational> &le_matrix)
     size_t tracker = 0;
     for (size_t i = 0; i < dimension; i++)
     {
-        if ((_c.support & (1ull << i)) != 0)
+        if (_c.support.test(i))
         {
             rational x = result_le[tracker];
             if (x > rational(0))
@@ -327,26 +325,26 @@ bool fracessa::find_candidate_rational(matrix<rational> &le_matrix)
     }
 
     // check p'Ap<=v for all rows not in the support
-    uint64_t extended_support = _c.support;
+    bitset64 extended_support = _c.support;
     for (size_t i = 0; i < dimension; i++)
     {
-        if ((_c.support & (1ull << i)) == 0) //not in the support - rows
+        if (!_c.support.test(i)) //not in the support - rows
         {
             rational rowsum = rational(0);
             for (size_t j = 0; j < dimension; j++)
-                if ((_c.support & (1ull << j)) != 0) // is in the support - columns
+                if (_c.support.test(j)) // is in the support - columns
                     rowsum += game_matrix(i,j) * result_vector[j];
 
             if (rowsum > result_le[_c.support_size])
                 return false;
             if (rowsum==result_le[_c.support_size])
-                extended_support = (extended_support | (1ull << i));
+                extended_support.set(i);
         }
 
     }
     _c.vector = result_vector;
     _c.extended_support = extended_support;
-    _c.extended_support_size = support_size_from_int(extended_support);
+    _c.extended_support_size = extended_support.count();
     _c.payoff = result_le[_c.support_size];
     _c.payoff_double = static_cast<double>(_c.payoff);
 
@@ -356,17 +354,17 @@ bool fracessa::find_candidate_rational(matrix<rational> &le_matrix)
 
 void fracessa::check_stability()
 {
-    uint64_t bitsetm = _c.support & (~(_c.support - 1)); //get lowest set bit as bitfield
-    int extended_support_reduced = _c.extended_support & (~bitsetm); //ext support without m
-    size_t m = postion_of_lowest_setbit(bitsetm);
+    bitset64 bitsetm = _c.support.lowest_set_bit(); //get lowest set bit as bitfield
+    bitset64 extended_support_reduced = _c.extended_support.subtract(bitsetm); //ext support without m
+    size_t m = _c.support.find_first();
     size_t extended_support_size_reduced = _c.extended_support_size - 1;
 
     if (conf_with_log && _logger) {
-        _logger->info("Support: {}", std::bitset<64>(_c.support).to_string());
-        _logger->info("Support size: {}", support_size_from_int(_c.support));
-        _logger->info("Extended support: {}", std::bitset<64>(_c.extended_support).to_string());
+        _logger->info("Support: {}", std::bitset<64>(_c.support.to_uint64()).to_string());
+        _logger->info("Support size: {}", _c.support.count());
+        _logger->info("Extended support: {}", std::bitset<64>(_c.extended_support.to_uint64()).to_string());
         _logger->info("Extended support size: {}", _c.extended_support_size);
-        _logger->info("Extended support reduced: {}", std::bitset<64>(extended_support_reduced).to_string());
+        _logger->info("Extended support reduced: {}", std::bitset<64>(extended_support_reduced.to_uint64()).to_string());
         _logger->info("index m: {}", m);
     }
 
@@ -385,10 +383,10 @@ void fracessa::check_stability()
     size_t row = 0;
     size_t column = 0;
     for (size_t i = 0;i<dimension;i++)
-        if ((extended_support_reduced & (1ull << i)) != 0) {
+        if (extended_support_reduced.test(i)) {
             column = 0;
             for (size_t j = 0; j < i+1; j++)
-                if ((extended_support_reduced & (1ull << j)) != 0) {
+                if (extended_support_reduced.test(j)) {
                     bee(row,column) = bee(column,row) = game_matrix(m, j) + game_matrix(j, m) + game_matrix(i, m) + game_matrix(m, i) -
                         game_matrix(i, j) - game_matrix(j, i) - 2 * game_matrix(m, m);
                     column += 1;
@@ -420,11 +418,11 @@ void fracessa::check_stability()
         return;
     }
 
-    uint64_t kay = (_c.extended_support & (~_c.support)); //extended_support without support
-    size_t kay_size = support_size_from_int(kay);
+    bitset64 kay = _c.extended_support.subtract(_c.support); //extended_support without support
+    size_t kay_size = kay.count();
 
     if (conf_with_log && _logger)
-        _logger->info("kay: {}", std::bitset<64>(kay).to_string());
+        _logger->info("kay: {}", std::bitset<64>(kay.to_uint64()).to_string());
 
     if (kay_size==0 || kay_size==1) {
         if (conf_with_log && _logger)
@@ -435,58 +433,54 @@ void fracessa::check_stability()
     }
 
     //do partial copositivity-check as in bomze_1992, p. 321/322
-    uint64_t jay = extended_support_reduced;
-    size_t r = support_size_from_int(jay & (~kay));
+    bitset64 jay = extended_support_reduced;
+    bitset64 jay_minus_kay = jay.subtract(kay);
+    size_t r = jay_minus_kay.count();
 
-    std::vector<uint64_t> kay_vee(r+1);
+    std::vector<bitset64> kay_vee(r+1);
     std::vector<size_t> kay_vee_size(r+1);
-    std::vector<uint64_t> jay_without_kay_vee(r+1);
+    std::vector<bitset64> jay_without_kay_vee(r+1);
     std::vector< matrix<rational>> bee_vee(r+1);
 
 
     kay_vee[0] = jay;
     kay_vee_size[0] = extended_support_size_reduced;
-    jay_without_kay_vee[0] = jay & (~kay);
+    jay_without_kay_vee[0] = jay_minus_kay;
     bee_vee[0] = bee;
 
     if (conf_with_log && _logger) {
         _logger->info("Partial Copositivity Check:");
         _logger->info("v=0:");
-        _logger->info("kay_vee[0]: {}", std::bitset<64>(kay_vee[0]).to_string());
+        _logger->info("kay_vee[0]: {}", std::bitset<64>(kay_vee[0].to_uint64()).to_string());
         _logger->info("kay_vee_size[0]: {}", kay_vee_size[0]);
-        _logger->info("jay_without_kay_vee[0]: {}", std::bitset<64>(jay_without_kay_vee[0]).to_string());
+        _logger->info("jay_without_kay_vee[0]: {}", std::bitset<64>(jay_without_kay_vee[0].to_uint64()).to_string());
         _logger->info("r: {}", r);
         _logger->info("bee_vee[0]:\n{}", bee_vee[0].to_string());
     }
 
     for (size_t v=1; v<=r; v++) {
 
-        uint64_t iv = jay_without_kay_vee[v-1] & (~(jay_without_kay_vee[v-1]-1)); //iv is lowest set bit!
-        jay_without_kay_vee[v] = jay_without_kay_vee[v-1] & (~iv); //remove iv from jay\kay
-        kay_vee[v] = kay_vee[v-1] & (~iv); //build kay_vee
+        bitset64 iv = jay_without_kay_vee[v-1].lowest_set_bit(); //iv is lowest set bit!
+        jay_without_kay_vee[v] = jay_without_kay_vee[v-1].subtract(iv); //remove iv from jay\kay
+        kay_vee[v] = kay_vee[v-1].subtract(iv); //build kay_vee
         kay_vee_size[v] = kay_vee_size[v-1]-1; //kay_vee_size
         bee_vee[v] = matrix<rational>(kay_vee_size[v],kay_vee_size[v]);
 
-        uint64_t lowest_kv_minus_one = kay_vee[v-1] & (~(kay_vee[v-1] - 1)); //get lowest set bit of kay_vee[v-1]
-        size_t index_position_to_remove = 0; //get the real distance of iv and lowest set bit of kay_vee[v-1]
-        size_t iterater = 0;
-        while (true) {
-            uint64_t actual_bit_kv_minus_one = (lowest_kv_minus_one << iterater);
-            if ((kay_vee[v-1] & actual_bit_kv_minus_one) != 0) {
-                if ((iv & actual_bit_kv_minus_one) != 0)
-                    break;
-                else
-                    index_position_to_remove++;
+        // Find the position of iv within kay_vee[v-1] by counting set bits before it
+        size_t index_position_to_remove = 0;
+        unsigned iv_pos = iv.find_first();
+        for (unsigned i = 0; i < iv_pos; i++) {
+            if (kay_vee[v-1].test(i)) {
+                index_position_to_remove++;
             }
-            iterater++;
         }
 
         if (conf_with_log && _logger) {
             _logger->info("v={}:", v);
-            _logger->info("kay_vee: {}", std::bitset<64>(kay_vee[v]).to_string());
+            _logger->info("kay_vee: {}", std::bitset<64>(kay_vee[v].to_uint64()).to_string());
             _logger->info("kay_vee_size: {}", kay_vee_size[v]);
-            _logger->info("jay_without_kay_vee: {}", std::bitset<64>(jay_without_kay_vee[v]).to_string());
-            _logger->info("iv: {}", std::bitset<64>(iv).to_string());
+            _logger->info("jay_without_kay_vee: {}", std::bitset<64>(jay_without_kay_vee[v].to_uint64()).to_string());
+            _logger->info("iv: {}", std::bitset<64>(iv.to_uint64()).to_string());
             _logger->info("Real index (distance) to remove: {}", index_position_to_remove);
         }
 

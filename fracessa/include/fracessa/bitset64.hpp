@@ -128,6 +128,32 @@ public:
     // this := this \ o
     FORCE_INLINE void inplace_subtract(const bitset64 &o) noexcept { bits_ &= ~o.bits_; bits_ &= last_mask_; }
 
+    // Return this \ o (set difference)
+    FORCE_INLINE bitset64 subtract(const bitset64 &o) const noexcept { return from_mask(nbits_, bits_ & ~o.bits_); }
+
+    // Get the lowest set bit as a bitset64 (only that bit set)
+    FORCE_INLINE bitset64 lowest_set_bit() const noexcept {
+        if (bits_ == 0ULL) return bitset64(nbits_);
+        unsigned pos = find_first();
+        bitset64 result(nbits_);
+        result.set(pos);
+        return result;
+    }
+
+    // Get smallest representation by circular rotation (for circular symmetric matrices)
+    FORCE_INLINE bitset64 smallest_representation() const noexcept {
+        if (nbits_ == 0 || bits_ == 0ULL) return *this;
+        bitset64 min_val = *this;
+        bitset64 current = *this;
+        for (unsigned i = 1; i < nbits_; i++) {
+            current = current.rot_r(1);
+            if (current.to_uint64() < min_val.to_uint64()) {
+                min_val = current;
+            }
+        }
+        return min_val;
+    }
+
     // --------------------------
     // non-modifying bitwise ops
     // --------------------------

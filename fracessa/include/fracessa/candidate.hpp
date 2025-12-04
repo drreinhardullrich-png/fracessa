@@ -3,15 +3,16 @@
 
 #include <fracessa/helper.hpp>
 #include <fracessa/matrix.hpp>
+#include <fracessa/bitset64.hpp>
 
 class candidate
 {
     public:
         size_t candidate_id = 0;
         std::vector<rational> vector;
-        uint64_t support;
+        bitset64 support;
         size_t support_size;
-        uint64_t extended_support;
+        bitset64 extended_support;
         size_t extended_support_size;
         size_t shift_reference;
         bool is_ess;
@@ -27,9 +28,9 @@ class candidate
             for (auto x : vector)
                 str += x.template convert_to<std::string>() + ",";
             str.pop_back();
-            str += ";" + std::to_string(support) + ";";
+            str += ";" + std::to_string(support.to_uint64()) + ";";
             str += std::to_string(support_size) + ";";
-            str += std::to_string(extended_support) + ";";
+            str += std::to_string(extended_support.to_uint64()) + ";";
             str += std::to_string(extended_support_size) + ";";
             str += std::to_string(shift_reference) + ";";
             str += std::to_string(is_ess) + ";";
