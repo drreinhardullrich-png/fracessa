@@ -3,6 +3,7 @@
 
 #include <vector>
 #include <exception>
+#include <sstream>
 
 #include <fracessa/helper.hpp>
 
@@ -241,13 +242,15 @@ class matrix
 
     //***************************************************everything else****************************************************
 
-    inline void stream_matrix(std::ostream &stream) const
+    inline std::string to_string() const
     {
+      std::ostringstream oss;
       for (size_t i=0;i<_rows;i++) {
         for (size_t j=0; j<_cols;j++)
-          stream << (*this)(i,j) << ",";
-        stream << std::endl;
+          oss << (*this)(i,j) << ",";
+        oss << std::endl;
       }
+      return oss.str();
     }
 
     inline matrix<double> to_double() const

@@ -1,5 +1,4 @@
 #include <fracessa/fracessa.hpp>
-#include <sstream>
 
 fracessa::fracessa(const matrix<rational>& matrix, bool with_candidates, bool exact, bool full_support, bool with_log)
 {
@@ -27,10 +26,7 @@ fracessa::fracessa(const matrix<rational>& matrix, bool with_candidates, bool ex
         _logger->set_level(spdlog::level::info);
         
         _logger->info("n={}", dimension);
-        _logger->info("game matrix:");
-        std::ostringstream oss;
-        game_matrix.stream_matrix(oss);
-        _logger->info("{}", oss.str());
+        _logger->info("game matrix:\n{}", game_matrix.to_string());
     }
 
 	for (size_t i = 0; i < dimension; i++) {
@@ -398,10 +394,7 @@ void fracessa::check_stability()
         }
 
     if (conf_with_log && _logger) {
-        _logger->info("matrix bee:");
-        std::ostringstream oss;
-        bee.stream_matrix(oss);
-        _logger->info("{}", oss.str());
+        _logger->info("matrix bee:\n{}", bee.to_string());
     }
 
     if (!conf_exact) {
@@ -460,10 +453,7 @@ void fracessa::check_stability()
         _logger->info("kay_vee_size[0]: {}", kay_vee_size[0]);
         _logger->info("jay_without_kay_vee[0]: {}", std::bitset<64>(jay_without_kay_vee[0]).to_string());
         _logger->info("r: {}", r);
-        _logger->info("bee_vee[0]:");
-        std::ostringstream oss;
-        bee_vee[0].stream_matrix(oss);
-        _logger->info("{}", oss.str());
+        _logger->info("bee_vee[0]:\n{}", bee_vee[0].to_string());
     }
 
     for (size_t v=1; v<=r; v++) {
@@ -518,10 +508,7 @@ void fracessa::check_stability()
         }
 
         if (conf_with_log && _logger) {
-            _logger->info("bee_vee:");
-            std::ostringstream oss;
-            bee_vee[v].stream_matrix(oss);
-            _logger->info("{}", oss.str());
+            _logger->info("bee_vee:\n{}", bee_vee[v].to_string());
         }
     }
 

@@ -11,6 +11,9 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# Generate compile_commands.json for IDE support
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 # Build configuration options
 option(BUILD_SHARED_LIBS "Build shared libraries instead of static" OFF)
 option(ENABLE_TESTING "Enable testing" OFF)
