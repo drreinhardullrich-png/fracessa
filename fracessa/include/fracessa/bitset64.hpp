@@ -74,6 +74,18 @@ public:
         return b;
     }
 
+    // Helper function to iterate through all non-empty support sets
+    // Calls callback for each bitset64 from 1 to (1<<nbits)-1
+    // Optimized: reuses a single bitset64 object, updating it with set_mask()
+    template<typename F>
+    static FORCE_INLINE void iterate_all_supports(unsigned nbits, F&& callback) {
+        bitset64 support(nbits);  // Create once, reuse
+        for (uint64_t mask = 1ull; mask < (1ull << nbits); mask++) {
+            support.set_mask(mask);  // Fast: just bits_ = mask & last_mask_
+            callback(support);       // Pass by const reference
+        }
+    }
+
     // --------------------------
     // info
     // --------------------------

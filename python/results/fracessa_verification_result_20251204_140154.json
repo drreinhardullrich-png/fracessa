@@ -1,0 +1,389 @@
+{
+  "metadata": {
+    "total_matrices": 31,
+    "successful": 31,
+    "failed": 0,
+    "timestamp": 1764849725.1765633,
+    "fracessa_settings": {
+      "include_candidates": true,
+      "enable_logging": true,
+      "exact_arithmetic": false,
+      "full_support_search": false,
+      "timeout": 1800.0
+    }
+  },
+  "results": [
+    {
+      "id": 31,
+      "dimension": 21,
+      "number_ess_expected": 4410,
+      "is_cs": true,
+      "matrix": "15,15,7,15,15,7,7,15,7,15",
+      "result": {
+        "success": true,
+        "ess_count": 4410,
+        "timing": 6.430203676223755
+      }
+    },
+    {
+      "id": 30,
+      "dimension": 20,
+      "number_ess_expected": 2560,
+      "is_cs": true,
+      "matrix": "13,13,13,8,8,8,13,13,13,-1",
+      "result": {
+        "success": true,
+        "ess_count": 2560,
+        "timing": 3.138531446456909
+      }
+    },
+    {
+      "id": 28,
+      "dimension": 19,
+      "number_ess_expected": 1444,
+      "is_cs": true,
+      "matrix": "13,31,31,27,31,27,13,13,27",
+      "result": {
+        "success": true,
+        "ess_count": 1444,
+        "timing": 0.18183422088623047
+      }
+    },
+    {
+      "id": 29,
+      "dimension": 19,
+      "number_ess_expected": 19,
+      "is_cs": true,
+      "matrix": "1,2,2,2,2,2,1,1,2",
+      "result": {
+        "success": true,
+        "ess_count": 19,
+        "timing": 0.09875917434692383
+      }
+    },
+    {
+      "id": 27,
+      "dimension": 18,
+      "number_ess_expected": 1152,
+      "is_cs": true,
+      "matrix": "8,7,5,5,5,5,7,8,-1",
+      "result": {
+        "success": true,
+        "ess_count": 1152,
+        "timing": 0.349076509475708
+      }
+    },
+    {
+      "id": 26,
+      "dimension": 17,
+      "number_ess_expected": 493,
+      "is_cs": true,
+      "matrix": "1627,1039,1527,1075,1527,1039,1627,648",
+      "result": {
+        "success": true,
+        "ess_count": 493,
+        "timing": 0.09568381309509277
+      }
+    },
+    {
+      "id": 25,
+      "dimension": 16,
+      "number_ess_expected": 512,
+      "is_cs": true,
+      "matrix": "7,5,4,4,4,5,7,-1",
+      "result": {
+        "success": true,
+        "ess_count": 512,
+        "timing": 0.2650172710418701
+      }
+    },
+    {
+      "id": 24,
+      "dimension": 15,
+      "number_ess_expected": 360,
+      "is_cs": true,
+      "matrix": "9,9,5,9,3,5,9",
+      "result": {
+        "success": true,
+        "ess_count": 360,
+        "timing": 0.048779964447021484
+      }
+    },
+    {
+      "id": 23,
+      "dimension": 14,
+      "number_ess_expected": 224,
+      "is_cs": true,
+      "matrix": "4,3,2,2,3,4,-1",
+      "result": {
+        "success": true,
+        "ess_count": 224,
+        "timing": 0.023006439208984375
+      }
+    },
+    {
+      "id": 22,
+      "dimension": 13,
+      "number_ess_expected": 143,
+      "is_cs": true,
+      "matrix": "7,18,18,10,7,10",
+      "result": {
+        "success": true,
+        "ess_count": 143,
+        "timing": 0.015160799026489258
+      }
+    },
+    {
+      "id": 18,
+      "dimension": 12,
+      "number_ess_expected": 105,
+      "is_cs": true,
+      "matrix": "533,118,326,357,118,477",
+      "result": {
+        "success": true,
+        "ess_count": 105,
+        "timing": 0.03912544250488281
+      }
+    },
+    {
+      "id": 19,
+      "dimension": 12,
+      "number_ess_expected": 12,
+      "is_cs": true,
+      "matrix": "287,50,200,150,113,200",
+      "result": {
+        "success": true,
+        "ess_count": 12,
+        "timing": 0.0432741641998291
+      }
+    },
+    {
+      "id": 20,
+      "dimension": 12,
+      "number_ess_expected": 24,
+      "is_cs": true,
+      "matrix": "292,-1,293,-1,293,-1",
+      "result": {
+        "success": true,
+        "ess_count": 24,
+        "timing": 0.020876407623291016
+      }
+    },
+    {
+      "id": 21,
+      "dimension": 12,
+      "number_ess_expected": 105,
+      "is_cs": true,
+      "matrix": "16029525,4007380,9088537,12022143,2147548,16029525",
+      "result": {
+        "success": true,
+        "ess_count": 105,
+        "timing": 0.03998231887817383
+      }
+    },
+    {
+      "id": 16,
+      "dimension": 11,
+      "number_ess_expected": 66,
+      "is_cs": true,
+      "matrix": "1,4,6,6,5",
+      "result": {
+        "success": true,
+        "ess_count": 66,
+        "timing": 0.009196996688842773
+      }
+    },
+    {
+      "id": 17,
+      "dimension": 11,
+      "number_ess_expected": 55,
+      "is_cs": true,
+      "matrix": "15,1/100,14,11/10,76/10",
+      "result": {
+        "success": true,
+        "ess_count": 55,
+        "timing": 0.006949186325073242
+      }
+    },
+    {
+      "id": 15,
+      "dimension": 10,
+      "number_ess_expected": 50,
+      "is_cs": true,
+      "matrix": "13,19,25,7,5",
+      "result": {
+        "success": true,
+        "ess_count": 50,
+        "timing": 0.022799253463745117
+      }
+    },
+    {
+      "id": 14,
+      "dimension": 9,
+      "number_ess_expected": 30,
+      "is_cs": true,
+      "matrix": "1,5,10,13",
+      "result": {
+        "success": true,
+        "ess_count": 30,
+        "timing": 0.009028434753417969
+      }
+    },
+    {
+      "id": 13,
+      "dimension": 8,
+      "number_ess_expected": 20,
+      "is_cs": true,
+      "matrix": "5,5,13,11",
+      "result": {
+        "success": true,
+        "ess_count": 20,
+        "timing": 0.00817728042602539
+      }
+    },
+    {
+      "id": 11,
+      "dimension": 7,
+      "number_ess_expected": 14,
+      "is_cs": true,
+      "matrix": "1,5,8",
+      "result": {
+        "success": true,
+        "ess_count": 14,
+        "timing": 0.003628969192504883
+      }
+    },
+    {
+      "id": 12,
+      "dimension": 7,
+      "number_ess_expected": 14,
+      "is_cs": true,
+      "matrix": "8,13,2",
+      "result": {
+        "success": true,
+        "ess_count": 14,
+        "timing": 0.003412008285522461
+      }
+    },
+    {
+      "id": 10,
+      "dimension": 6,
+      "number_ess_expected": 9,
+      "is_cs": true,
+      "matrix": "1,-1,1",
+      "result": {
+        "success": true,
+        "ess_count": 9,
+        "timing": 0.006993293762207031
+      }
+    },
+    {
+      "id": 8,
+      "dimension": 5,
+      "number_ess_expected": 5,
+      "is_cs": true,
+      "matrix": "1,3",
+      "result": {
+        "success": true,
+        "ess_count": 5,
+        "timing": 0.005624532699584961
+      }
+    },
+    {
+      "id": 9,
+      "dimension": 5,
+      "number_ess_expected": 6,
+      "is_cs": false,
+      "matrix": "1,0,2,2,2,0,1,2,2,2,2,2,1,0,0,2,2,0,1,0,2,2,0,0,1",
+      "result": {
+        "success": true,
+        "ess_count": 6,
+        "timing": 0.005890846252441406
+      }
+    },
+    {
+      "id": 7,
+      "dimension": 4,
+      "number_ess_expected": 0,
+      "is_cs": false,
+      "matrix": "-1,1,0,0,1,-1,0,0,0,0,0,-1,0,0,-1,0",
+      "result": {
+        "success": true,
+        "ess_count": 0,
+        "timing": 0.00618290901184082
+      }
+    },
+    {
+      "id": 3,
+      "dimension": 3,
+      "number_ess_expected": 2,
+      "is_cs": false,
+      "matrix": "4,6,1,7,5,4,0,7,3",
+      "result": {
+        "success": true,
+        "ess_count": 2,
+        "timing": 0.003542661666870117
+      }
+    },
+    {
+      "id": 4,
+      "dimension": 3,
+      "number_ess_expected": 1,
+      "is_cs": false,
+      "matrix": "1,2,2,2,1,2,0,0,1",
+      "result": {
+        "success": true,
+        "ess_count": 1,
+        "timing": 0.0034301280975341797
+      }
+    },
+    {
+      "id": 5,
+      "dimension": 3,
+      "number_ess_expected": 1,
+      "is_cs": false,
+      "matrix": "0,0,0,0,0,0,1,1,0",
+      "result": {
+        "success": true,
+        "ess_count": 1,
+        "timing": 0.006460905075073242
+      }
+    },
+    {
+      "id": 6,
+      "dimension": 3,
+      "number_ess_expected": 1,
+      "is_cs": false,
+      "matrix": "0,2,-1,2,0,3,-1,3,1/2",
+      "result": {
+        "success": true,
+        "ess_count": 1,
+        "timing": 0.00563502311706543
+      }
+    },
+    {
+      "id": 1,
+      "dimension": 2,
+      "number_ess_expected": 1,
+      "is_cs": false,
+      "matrix": "0,1,1,0",
+      "result": {
+        "success": true,
+        "ess_count": 1,
+        "timing": 0.00286865234375
+      }
+    },
+    {
+      "id": 2,
+      "dimension": 2,
+      "number_ess_expected": 2,
+      "is_cs": false,
+      "matrix": "3,1,2,4",
+      "result": {
+        "success": true,
+        "ess_count": 2,
+        "timing": 0.004494667053222656
+      }
+    }
+  ]
+}

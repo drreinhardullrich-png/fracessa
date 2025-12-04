@@ -6,6 +6,7 @@
 #include <sstream>
 
 #include <fracessa/helper.hpp>
+#include <fracessa/bitset64.hpp>
 
 class matrix_exception: public std::exception
 {
@@ -14,7 +15,6 @@ class matrix_exception: public std::exception
   return "Exception while creating a matrix instance. Your input is not correct.";
   }
 };
-
 
 template <typename T>
 class matrix
@@ -265,17 +265,17 @@ class matrix
       return A;
     }
 
-    inline void get_le_matrix(uint64_t support, size_t support_size, matrix<T> &le_matrix)
+    inline void get_le_matrix(const bitset64& support, size_t support_size, matrix<T> &le_matrix)
     {
       size_t row = 0;
       size_t column = 0;
 
       for (size_t i=0; i<_rows; i++)
-        if ((support & (1ull << i)) != 0)
+        if (support.test(i))
         {
           column = 0;
           for (size_t j=0; j<_cols; j++)
-            if ((support & (1ull << j)) != 0)
+            if (support.test(j))
             {
               le_matrix(row, column) = _matrix[i*_cols+j];
               column++;
@@ -363,17 +363,19 @@ class matrix
     {
       static_assert(std::is_same<T, rational>::value, "T is not rational!");
 
-      for (uint64_t support = 1ull; support < (1ull << _rows); support++) { //iterate all subsets without the empty set
-        size_t n = support_size_from_int(support);
+      bool result = true;
+      bitset64::iterate_all_supports(_rows, [&](const bitset64& support) {
+        if (!result) return;  // Early exit optimization
+        size_t n = support.count();
         matrix<T> A = matrix<T>(n,n);
 
         size_t row = 0;
         size_t column = 0;
         for (size_t i=0; i<_rows; i++) {
-          if ((support & (1ull << i)) != 0) {
+          if (support.test(i)) {
             column = 0;
             for (size_t j=0; j<_cols; j++)
-              if ((support & (1ull << j)) != 0) {
+              if (support.test(j)) {
                 A(row,column) = (*this)(i,j);
                 column++;
               }
@@ -381,11 +383,10 @@ class matrix
           }
         }
         if (A.determinant() <= 0 && A.adjugate().greater_zero()) {
-          return 0;
+          result = false;  // Found counterexample
         }
-
-      }
-      return 1;
+      });
+      return result;
     }
 
     inline matrix<T> clone()

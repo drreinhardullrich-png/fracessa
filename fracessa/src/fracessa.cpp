@@ -1,4 +1,5 @@
 #include <fracessa/fracessa.hpp>
+#include <fracessa/bitset64.hpp>
 
 fracessa::fracessa(const matrix<rational>& matrix, bool with_candidates, bool exact, bool full_support, bool with_log)
 {
@@ -179,7 +180,8 @@ bool fracessa::find_candidate_double(matrix<double> &le_matrix)
     std::vector<double> result_le = std::vector<double>(n, 0.);
     std::vector<double> result_vector = std::vector<double>(dimension);
 
-    game_matrix_double.get_le_matrix(_c.support, _c.support_size, le_matrix);
+    bitset64 support_bitset = bitset64::from_mask(dimension, _c.support);
+    game_matrix_double.get_le_matrix(support_bitset, _c.support_size, le_matrix);
 
     ////////////////////////////////////////////////////////////////////////// gauss with partial pivoting
     for (int i=0; i<n; i++) {
@@ -262,7 +264,8 @@ bool fracessa::find_candidate_rational(matrix<rational> &le_matrix)
     std::vector<rational> result_le= std::vector<rational>(n, 0);
     std::vector<rational> result_vector= std::vector<rational>(dimension);
 
-    game_matrix.get_le_matrix(_c.support,_c.support_size, le_matrix);
+    bitset64 support_bitset = bitset64::from_mask(dimension, _c.support);
+    game_matrix.get_le_matrix(support_bitset, _c.support_size, le_matrix);
 
     ////////////////////////////////////////////////////////////////////////// gauss with partial pivoting
     for (int i=0; i<n; i++) {
