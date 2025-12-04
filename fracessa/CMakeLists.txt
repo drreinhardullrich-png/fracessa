@@ -32,8 +32,7 @@ endif()
 
 # Build the core library
 add_library(fracessa_lib
-    src/ess_finder.cpp
-    src/ref.cpp
+    src/fracessa.cpp
 )
 
 # Set library properties
@@ -49,6 +48,7 @@ target_include_directories(fracessa_lib
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/fracessa>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third_party/argparse/include>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third_party/boost_1_89_0_linux>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third_party/spdlog/include>
     PRIVATE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
 )

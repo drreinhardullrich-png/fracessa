@@ -4,7 +4,7 @@
 #include <cassert>
 #include <string>
 
-#include <fracessa/ess_finder.hpp>
+#include <fracessa/fracessa.hpp>
 #include <fracessa/matrix.hpp>
 #include <argparse/argparse.hpp>
 
@@ -49,7 +49,7 @@ int main(int argc, char *argv[])
     auto fullsupport = program.get<bool>("--fullsupport");
 
     ::matrix<rational> A = ::matrix<rational>::create_from_cli_string(matrix_str);
-    ess_finder x = ess_finder(A, candidates, exact, fullsupport, logger);
+    ::fracessa x = ::fracessa(A, candidates, exact, fullsupport, logger);
 
     std::cout << x.ess_count << std::endl;
 

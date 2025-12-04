@@ -30,9 +30,9 @@
     {"id": 28, "dimension": 19, "number_ess": 1444, "is_cs": true, "in_use": true, "matrix": "13,31,31,27,31,27,13,13,27"},
     {"id": 29, "dimension": 19, "number_ess": 19, "is_cs": true, "in_use": true, "matrix": "1,2,2,2,2,2,1,1,2"},
     {"id": 30, "dimension": 20, "number_ess": 2560, "is_cs": true, "in_use": true, "matrix": "13,13,13,8,8,8,13,13,13,-1"},
-    {"id": 31, "dimension": 21, "number_ess": 4410, "is_cs": true, "in_use": false, "matrix": "15,15,7,15,15,7,7,15,7,15"},
-    {"id": 32, "dimension": 22, "number_ess": 5632, "is_cs": true, "in_use": false, "matrix": "2,2,4,4,5,5,4,4,2,2,-1"},
-    {"id": 33, "dimension": 23, "number_ess": 2507, "is_cs": true, "in_use": false, "matrix": "27478,22664,10976,25676,18552,18552,25676,10976,22664,27478,17939"},
+    {"id": 31, "dimension": 21, "number_ess": 4410, "is_cs": true, "in_use": true, "matrix": "15,15,7,15,15,7,7,15,7,15"},
+    {"id": 32, "dimension": 22, "number_ess": 5632, "is_cs": true, "in_use": true, "matrix": "2,2,4,4,5,5,4,4,2,2,-1"},
+    {"id": 33, "dimension": 23, "number_ess": 2507, "is_cs": true, "in_use": true, "matrix": "27478,22664,10976,25676,18552,18552,25676,10976,22664,27478,17939"},
     {"id": 34, "dimension": 24, "number_ess": 15120, "is_cs": true, "in_use": false, "matrix": "15,15,7,15,15,7,15,7,7,15,15,7"}
   ]
 }

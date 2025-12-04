@@ -22,10 +22,6 @@ typedef boost::multiprecision::cpp_rational rational;
 // Named constants to replace magic numbers
 static constexpr size_t CANDIDATE_RESERVE_MULTIPLIER = 10;
 static constexpr uint64_t UINT64_MAX_VALUE = 18446744073709551615ULL;
-static constexpr size_t MIN_SUPPORT_SIZE = 1;
-static constexpr size_t LE_MATRIX_EXTRA_ROWS = 1;
-static constexpr size_t LE_MATRIX_EXTRA_COLS = 2;
-static constexpr size_t INVALID_SHIFT_REFERENCE = 0;
 
 
 #ifdef _MSC_VER
