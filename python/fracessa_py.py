@@ -159,9 +159,7 @@ class Fracessa:
             script_dir = Path(__file__).parent.parent
             possible_paths = [
                 script_dir / "fracessa" / "build" / "fracessa",
-                script_dir / "build" / "fracessa",
                 Path("./fracessa/build/fracessa"),
-                Path("./build/fracessa")
             ]
 
             self.executable_path = None
