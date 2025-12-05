@@ -1,179 +1,224 @@
 #include <fracessa/fracessa.hpp>
 #include <fracessa/bitset64.hpp>
+#include <fracessa/eigen_extensions.hpp>
+#include <fracessa/helper.hpp>
+#include <Eigen/LU>
+#include <limits>
 
-bool fracessa::find_candidate_double(matrix<double> &le_matrix)
+/*
+ * ============================================================================
+ * Why PartialPivLU is the right choice for your constraints
+ * ============================================================================
+ * 
+ * Your requirements were:
+ * 
+ * 1. Fastest possible algorithm
+ *    PartialPivLU is significantly faster than ColPivHouseholderQR
+ *    (~2× faster on average, sometimes more).
+ * 
+ * 2. Never return "no solution" unless 100% certain
+ *    To meet this requirement, you must use a very conservative singularity
+ *    check (machine epsilon).
+ * 
+ *    PartialPivLU works perfectly for this:
+ *    Pivot = 0 → matrix is mathematically singular → "no solution"
+ *    Pivot > epsilon → treat as invertible
+ * 
+ * 3. Prefer a wrong solution over a false "no solution"
+ *    PartialPivLU is more "optimistic" and will attempt a solution unless
+ *    pivot is truly zero.
+ * 
+ * 4. A is square
+ *    So QR (which normally handles rectangular) provides no special benefit.
+ * 
+ * 5. You do NOT want least-norm or least-squares
+ *    ColPivHouseholderQR is a least-squares solver and will always return a
+ *    solution even when A is singular — unless you enable thresholding, which
+ *    becomes harder to tune for your requirement ("100% sure").
+ * 
+ *    LU is simpler and clearer:
+ *    A pivot of 0 = singular.
+ *    QR has no such clear criterion.
+ * 
+ * ============================================================================
+ * Why NOT ColPivHouseholderQR in your case
+ * ============================================================================
+ * 
+ * QR with column pivoting is:
+ *     more stable, but
+ *     slower, and
+ *     its rank detection always depends on a tolerance.
+ * 
+ * There is no "100% certain" singularity detection with QR unless the matrix
+ * has an exact zero column after pivoting — a rare event due to floating-point
+ * operations.
+ * 
+ * To avoid false "no solution", you would need a very small tolerance, but
+ * then QR loses its stability advantage.
+ * 
+ * In short:
+ *     ✔ LU lets you reliably detect a pivot=0
+ *     ✖ QR's rank detection is always tolerance-based
+ * 
+ * ============================================================================
+ * FINAL RECOMMENDATION
+ * ============================================================================
+ * 
+ * 👉 Choose PartialPivLU
+ * 
+ * with a pivot threshold:
+ *     const double tol = std::numeric_limits<double>::epsilon();
+ * 
+ * This gives you:
+ *     • Fastest speed
+ *     • Clear singularity detection (pivot=0)
+ *     • Zero risk of false "no solution"
+ *     • A solution in all borderline cases
+ *     • Minimal complexity
+ * 
+ * ============================================================================
+ */
+
+// Helper function to build full solution vector from support (double version)
+bool fracessa::build_solution_vector(const DoubleVector& solution, DoubleVector& solution_full_n)
 {
-    int n = _c.support_size + 1;
-
-    std::vector<double> result_le = std::vector<double>(n, 0.);
-    std::vector<double> result_vector = std::vector<double>(dimension);
-
-    game_matrix_double.get_le_matrix(_c.support, _c.support_size, le_matrix);
-
-    ////////////////////////////////////////////////////////////////////////// gauss with partial pivoting
-    for (int i=0; i<n; i++) {
-        // Search for maximum in this column
-        double max_element = std::abs(le_matrix(i,i));
-        int max_row = i;
-        for (int k=i+1; k<n; k++) {
-            if (std::abs(le_matrix(k,i)) > max_element) {
-                max_element = std::abs(le_matrix(k,i));
-                max_row = k;
-            }
-        }
-        // Swap maximum row with current row (column by column)
-        for (int k=i; k<n+1;k++) {
-            double tmp = le_matrix(max_row,k);
-            le_matrix(max_row,k) = le_matrix(i,k);
-            le_matrix(i,k) = tmp;
-        }
-
-        if (std::abs(le_matrix(i,i)) < 1e-15) {
-            return false;
-        }
-        // Make all rows below this one 0 in current column
-        for (int k=i+1; k<n; k++) {
-            double c = -le_matrix(k,i)/le_matrix(i,i);
-            for (int j=i; j<n+1; j++) {
-                if (i==j) {
-                    le_matrix(k,j)= 0;
-                } else {
-                    le_matrix(k,j) += c * le_matrix(i,j);
-                }
-            }
-        }
-    }
-    // Solve equation Ax=b for an upper triangular matrix A
-    for (int i=n-1; i>=0; i--) {
-        result_le[i] = le_matrix(i,n)/le_matrix(i,i);
-        for (int k=i-1; k>=0; k--) {
-            le_matrix(k,n) -= le_matrix(k,i) * result_le[i];
-        }
-    }
-
-    //build large vector, if none of the elements is too negative
+    solution_full_n = DoubleVector::Zero(dimension);
+    
     size_t tracker = 0;
     for (size_t i = 0; i < dimension; i++) {
         if (_c.support.test(i)) {
-            double x = result_le[tracker];
-            if (x > -1e-5)
-                result_vector[i] = x;
-            else
+            double x = solution(tracker);
+            if (x > -1e-5) { //large margin to be on the safe side, if it is a false positive, it will be eliminated by the rational check!
+                solution_full_n(i) = x;
+            } else {
                 return false;
+            }
             tracker += 1;
+        } else {
+            solution_full_n(i) = 0.;
         }
-        else
-            result_vector[i] = 0.;
     }
+    
+    return true;
+}
 
-    // check p'Ap<=v for all rows not in the support
-    double errorbound_rowsum=5e-5*dimension;
+// Helper function to build full solution vector from support (rational version)
+bool fracessa::build_solution_vector(const RationalVector& solution, RationalVector& solution_full_n)
+{
+    solution_full_n = RationalVector::Zero(dimension);
+    
+    size_t tracker = 0;
+    for (size_t i = 0; i < dimension; i++) {
+        if (_c.support.test(i)) {
+            rational x = solution(tracker);
+            if (x > rational(0)) {
+                solution_full_n(i) = x;
+            } else {
+                return false;
+            }
+            tracker += 1;
+        } else {
+            solution_full_n(i) = rational(0);
+        }
+    }
+    
+    return true;
+}
+
+// Helper function to check constraints p'Ap<=v for rows not in support (double version)
+bool fracessa::check_constraints(const DoubleVector& solution, const DoubleVector& solution_full_n)
+{
+    double errorbound_rowsum = 5e-5 * dimension; // here use a wide margin. if it is a false positive, it will be eliminated by the rational check!
 
     for (size_t i = 0; i < dimension; i++) {
         if (!_c.support.test(i)) { //not in the support - rows
             double rowsum = 0.;
             for (size_t j = 0; j < dimension; j++)
                 if (_c.support.test(j)) // is in the support - columns
-                    rowsum += game_matrix_double(i,j) * result_vector[j];
+                    rowsum += game_matrix_double(i,j) * solution_full_n(j);
 
-            if (!(rowsum <= result_le[_c.support_size] + errorbound_rowsum))
+            if (!(rowsum <= solution(_c.support_size) + errorbound_rowsum)) //result
                 return false;
         }
     }
     return true;
 }
 
-
-bool fracessa::find_candidate_rational(matrix<rational> &le_matrix)
+// Helper function to check constraints p'Ap<=v for rows not in support (rational version)
+bool fracessa::check_constraints(const RationalVector& solution, const RationalVector& solution_full_n, bitset64& extended_support)
 {
-    int n = _c.support_size + 1;
-
-    std::vector<rational> result_le= std::vector<rational>(n, 0);
-    std::vector<rational> result_vector= std::vector<rational>(dimension);
-
-    game_matrix.get_le_matrix(_c.support, _c.support_size, le_matrix);
-
-    ////////////////////////////////////////////////////////////////////////// gauss with partial pivoting
-    for (int i=0; i<n; i++) {
-        // Search for maximum in this column
-        rational max_element = abs(le_matrix(i,i));
-        int max_row = i;
-        for (int k=i+1; k<n; k++) {
-            if (abs(le_matrix(k,i)) > max_element) {
-                max_element = abs(le_matrix(k,i));
-                max_row = k;
-            }
-        }
-        // Swap maximum row with current row (column by column)
-        for (int k=i; k<n+1;k++) {
-            rational tmp = le_matrix(max_row,k);
-            le_matrix(max_row,k) = le_matrix(i,k);
-            le_matrix(i,k) = tmp;
-        }
-
-        if (le_matrix(i,i)==rational(0)) {
-            return false;
-        }
-        // Make all rows below this one 0 in current column
-        for (int k=i+1; k<n; k++) {
-            rational c = -le_matrix(k,i)/le_matrix(i,i);
-            for (int j=i; j<n+1; j++) {
-                if (i==j) {
-                    le_matrix(k,j)= rational(0);
-                } else {
-                    le_matrix(k,j) += c * le_matrix(i,j);
-                }
-            }
-        }
-
-    }
-    // Solve equation Ax=b for an upper triangular matrix A
-    for (int i=n-1; i>=0; i--) {
-        result_le[i] = le_matrix(i,n)/le_matrix(i,i);
-        for (int k=i-1;k>=0; k--) {
-            le_matrix(k,n) -= le_matrix(k,i) * result_le[i];
-        }
-    }
-
-    //build large vector, if all elements are not too negative
-    size_t tracker = 0;
-    for (size_t i = 0; i < dimension; i++)
-    {
-        if (_c.support.test(i))
-        {
-            rational x = result_le[tracker];
-            if (x > rational(0))
-                result_vector[i] = x;
-            else
-                return false;
-            tracker += 1;
-        }
-        else
-            result_vector[i] = rational(0);
-    }
-
-    // check p'Ap<=v for all rows not in the support
-    bitset64 extended_support = _c.support;
-    for (size_t i = 0; i < dimension; i++)
-    {
+    for (size_t i = 0; i < dimension; i++) {
         if (!_c.support.test(i)) //not in the support - rows
         {
             rational rowsum = rational(0);
             for (size_t j = 0; j < dimension; j++)
                 if (_c.support.test(j)) // is in the support - columns
-                    rowsum += game_matrix(i,j) * result_vector[j];
+                    rowsum += game_matrix(i,j) * solution_full_n(j);
 
-            if (rowsum > result_le[_c.support_size])
+            if (rowsum > solution(_c.support_size))
                 return false;
-            if (rowsum==result_le[_c.support_size])
+            if (rowsum == solution(_c.support_size))
                 extended_support.set(i);
         }
-
     }
-    _c.vector = result_vector;
+    return true;
+}
+
+bool fracessa::find_candidate_double(DoubleMatrix& A, DoubleVector& b)
+{
+    Eigen::PartialPivLU<DoubleMatrix> lu(A);
+    
+    auto diag = lu.matrixLU().diagonal().cwiseAbs();
+    double minPivot = diag.minCoeff();
+    const double tol = std::numeric_limits<double>::epsilon();
+   
+    if (minPivot < tol) { // use the smallest possible tolerance, in case of false positives they get eliminated by the rational check!
+        return false; // Matrix is singular
+    }    
+    DoubleVector solution = lu.solve(b);
+    DoubleVector solution_full_n;
+    
+    // Build large vector, if none of the elements is too negative
+    if (!build_solution_vector(solution, solution_full_n)) {
+        return false;
+    }
+
+    // check p'Ap<=v for all rows not in the support
+    if (!check_constraints(solution, solution_full_n)) {
+        return false;
+    }
+    
+    return true;
+}
+
+
+bool fracessa::find_candidate_rational(RationalMatrix& A, RationalVector& b)
+{
+    // Use Eigen's BareissLU solver (fraction-free for exact arithmetic)
+    Eigen::Ext::BareissLU<RationalMatrix> bareiss(A);
+    
+    RationalVector solution;
+    if (!bareiss.solve(b, solution)) {
+        return false;
+    }
+    
+    RationalVector solution_full_n;
+    
+    // Build large vector, if all elements are not too negative
+    if (!build_solution_vector(solution, solution_full_n)) {
+        return false;
+    }
+
+    // check p'Ap<=v for all rows not in the support
+    bitset64 extended_support = _c.support;
+    if (!check_constraints(solution, solution_full_n, extended_support)) {
+        return false;
+    }
+    
+    _c.vector = solution_full_n;
     _c.extended_support = extended_support;
     _c.extended_support_size = extended_support.count();
-    _c.payoff = result_le[_c.support_size];
+    _c.payoff = solution(_c.support_size);
     _c.payoff_double = static_cast<double>(_c.payoff);
 
     return true;

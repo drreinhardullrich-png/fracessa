@@ -1,17 +1,18 @@
 #include <fracessa/fracessa.hpp>
 #include <fracessa/bitset64.hpp>
 
-fracessa::fracessa(const matrix<rational>& matrix, bool with_candidates, bool exact, bool full_support, bool with_log)
+fracessa::fracessa(const RationalMatrix& matrix, bool is_cs, bool with_candidates, bool exact, bool full_support, bool with_log)
 {
 
     game_matrix = matrix;
+    this->is_cs = is_cs;
     conf_with_candidates = with_candidates;
     conf_exact = exact;
     conf_full_support = full_support;
     conf_with_log = with_log;
 
     if (!conf_exact)
-        game_matrix_double = game_matrix.to_double();
+        game_matrix_double = matrix_ops::to_double(game_matrix);
 
     dimension = matrix.rows();
     _supports = std::vector< std::vector<bitset64>>(dimension);
@@ -27,14 +28,14 @@ fracessa::fracessa(const matrix<rational>& matrix, bool with_candidates, bool ex
         _logger->set_level(spdlog::level::info);
         
         _logger->info("n={}", dimension);
-        _logger->info("game matrix:\n{}", game_matrix.to_string());
+        _logger->info("game matrix:\n{}", matrix_ops::to_string(game_matrix));
     }
 
 	for (size_t i = 0; i < dimension; i++) {
 		_supports[i].reserve(static_cast<uint64_t>(boost::math::binomial_coefficient<double>(dimension, i + 1)));
 	}
 
-	if (game_matrix.is_cs()) {
+	if (is_cs) {
         _coprime_sizes.resize(dimension);
         for (size_t i=0; i<dimension; i++)
             _coprime_sizes[i] = (boost::integer::gcd(i+1, dimension) == 1); //support size and dimension are coprime
@@ -72,8 +73,16 @@ fracessa::fracessa(const matrix<rational>& matrix, bool with_candidates, bool ex
 void fracessa::search_support_size(size_t support_size) //uses real supportsize not c-array-style!
 {
     _c.support_size = support_size;
-    matrix<double> le_matrix_double = matrix<double>(support_size + 1, support_size + 2);
-    matrix<rational> le_matrix_rational = matrix<rational>(support_size + 1, support_size + 2);
+
+    // Initialize matrices once per support_size for reuse
+    DoubleMatrix A_double;
+    DoubleVector b_double;
+    RationalMatrix A_rational;
+    RationalVector b_rational;
+    if (!conf_exact) {
+        matrix_ops::get_kkt_rhs(support_size, b_double);
+    }
+    matrix_ops::get_kkt_rhs(support_size, b_rational);
 
     if (conf_with_log && _logger)
         _logger->info("Searching support size {}", support_size);
@@ -87,7 +96,9 @@ void fracessa::search_support_size(size_t support_size) //uses real supportsize 
             if (conf_with_log && _logger) {
                 support_log_msg = "[" + std::to_string(_c.support.to_uint64()) + "]";
             }
-            if (!find_candidate_double(le_matrix_double))
+            // Update matrix A based on current support
+            matrix_ops::get_kkt_bordering(game_matrix_double, _c.support, _c.support_size, A_double);
+            if (!find_candidate_double(A_double, b_double))
                 continue;
         }
 
@@ -100,7 +111,9 @@ void fracessa::search_support_size(size_t support_size) //uses real supportsize 
             }
         }
 
-        if (!find_candidate_rational(le_matrix_rational))
+        // Update matrix A based on current support
+        matrix_ops::get_kkt_bordering(game_matrix, _c.support, _c.support_size, A_rational);
+        if (!find_candidate_rational(A_rational, b_rational))
             continue;
 
         _c.candidate_id++;
@@ -113,7 +126,7 @@ void fracessa::search_support_size(size_t support_size) //uses real supportsize 
         if (_c.is_ess)
             ess_count++;
 
-        if (game_matrix.is_cs() && _coprime_sizes[support_size-1])
+        if (is_cs && _coprime_sizes[support_size-1])
             _c.shift_reference = _c.candidate_id;
         else
             _c.shift_reference = 0;
@@ -135,7 +148,7 @@ void fracessa::search_support_size(size_t support_size) //uses real supportsize 
                 _supports[i].end());
         }
 
-        if (game_matrix.is_cs() && _coprime_sizes[support_size-1]) {
+        if (is_cs && _coprime_sizes[support_size-1]) {
 
             for (size_t i=0; i<dimension-1;i++) {
 
@@ -147,8 +160,12 @@ void fracessa::search_support_size(size_t support_size) //uses real supportsize 
                     ess_count++;
 
                 if (conf_with_candidates) {
-
-                    std::rotate(_c.vector.begin(), _c.vector.begin() + 1, _c.vector.end());
+                    // Rotate Eigen vector: move first element to end
+                    rational first = _c.vector(0);
+                    for (Eigen::Index j = 0; j < _c.vector.size() - 1; j++) {
+                        _c.vector(j) = _c.vector(j + 1);
+                    }
+                    _c.vector(_c.vector.size() - 1) = first;
                     _c.extended_support = _c.extended_support.rot_r(1, dimension);
                     candidates.push_back(_c);
 

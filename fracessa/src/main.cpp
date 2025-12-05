@@ -1,12 +1,12 @@
 #include <iostream>
 #include <vector>
-#include <cstdint>
 #include <cassert>
 #include <string>
 
 #include <fracessa/fracessa.hpp>
 #include <fracessa/matrix.hpp>
 #include <argparse/argparse.hpp>
+#include <boost/algorithm/string.hpp>
 
 int main(int argc, char *argv[])
 {
@@ -48,8 +48,55 @@ int main(int argc, char *argv[])
     auto exact = program.get<bool>("--exact");
     auto fullsupport = program.get<bool>("--fullsupport");
 
-    ::matrix<rational> A = ::matrix<rational>::create_from_cli_string(matrix_str);
-    ::fracessa x = ::fracessa(A, candidates, exact, fullsupport, logger);
+    // Parse CLI string format: "n#values"
+    std::vector<std::string> first_split;
+    boost::split(first_split, matrix_str, boost::is_any_of("#"));
+    if (first_split.size() != 2) {
+        std::cerr << "Error: String for the matrix does not include '#' as a separator between dimension and matrix, or several '#' were found!" << std::endl;
+        return EXIT_FAILURE;
+    }
+    
+    size_t n;
+    try {
+        n = std::stoull(first_split[0]);
+    } catch (std::exception& e) {
+        std::cerr << "Error: The given dimension could not be converted into an integer number!" << std::endl;
+        return EXIT_FAILURE;
+    }
+    
+    std::vector<std::string> second_split;
+    boost::split(second_split, first_split[1], boost::is_any_of(","));
+    
+    // Convert string values to rational
+    std::vector<rational> rational_values;
+    try {
+        for (const auto& str_val : second_split) {
+            rational_values.push_back(rational(str_val));
+        }
+    } catch (std::exception& e) {
+        std::cerr << "Error: Could not convert matrix values to rational numbers!" << std::endl;
+        std::cerr << "  " << e.what() << std::endl;
+        return EXIT_FAILURE;
+    }
+    
+    RationalMatrix A;
+    bool is_cs;
+    
+    if (rational_values.size() == n/2) {
+        // Circular symmetric matrix
+        A = matrix_ops::create_circular_symmetric(n, rational_values);
+        is_cs = true;
+    } else if (rational_values.size() == n*(n+1)/2) {
+        // Symmetric matrix (upper triangular)
+        A = matrix_ops::create_symmetric(n, rational_values);
+        is_cs = false;
+    } else {
+        std::cerr << "Error: The number of matrix-elements must either be floor(dimension/2) (for a circular symmetric matrix) or dimension*(dimension+1)/2 (for a symmetric matrix)!" << std::endl;
+        std::cerr << "  Got " << rational_values.size() << " values, but expected " << n/2 << " (circular symmetric) or " << n*(n+1)/2 << " (symmetric)." << std::endl;
+        return EXIT_FAILURE;
+    }
+    
+    ::fracessa x = ::fracessa(A, is_cs, candidates, exact, fullsupport, logger);
 
     std::cout << x.ess_count << std::endl;
 

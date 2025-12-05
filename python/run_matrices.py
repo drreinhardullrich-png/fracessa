@@ -285,7 +285,7 @@ def process_matrix(matrix_data):
         result = fracessa.compute_ess(
             matrix=matrix,
             include_candidates=True,
-            enable_logging=True,
+            enable_logging=False,
             timeout=1800.0  # 30 minutes timeout
         )
         
@@ -471,7 +471,7 @@ def main():
                 "num_processes": num_processes,
                 "fracessa_settings": {
                     "include_candidates": True,
-                    "enable_logging": True,
+                    "enable_logging": False,
                     "exact_arithmetic": False,
                     "full_support_search": False,
                     "timeout": 1800.0
@@ -503,6 +503,27 @@ def main():
     print(f"  CSV:  {candidates_file}")
     print(f"\nSummary: {successful} successful, {failed} failed out of {len(matrices)} matrices")
     print(f"Total candidates: {len(all_candidates)}")
+    
+    # Check for ESS count mismatches
+    ess_mismatches = []
+    for result in results:
+        if result["result"]["success"]:
+            actual_ess = result["result"]["ess_count"]
+            expected_ess = result.get("number_ess_expected", None)
+            if expected_ess is not None and actual_ess != expected_ess:
+                ess_mismatches.append({
+                    "id": result["id"],
+                    "dimension": result["dimension"],
+                    "actual": actual_ess,
+                    "expected": expected_ess
+                })
+    
+    if ess_mismatches:
+        print(f"\n⚠️  ESS COUNT MISMATCHES: {len(ess_mismatches)} matrices")
+        for mismatch in ess_mismatches:
+            print(f"  Matrix ID {mismatch['id']} (dim {mismatch['dimension']}): "
+                  f"got {mismatch['actual']} ESS, expected {mismatch['expected']}")
+    
     if failed > 0:
         print("\nFailed matrices:")
         for result in results:
@@ -570,10 +591,27 @@ def main():
         if verification["skipped"]:
             print(f"\nℹ️  Skipped (not in testset): {verification['skipped']}")
         
-        if verification["status"] == "PASS":
-            print(f"\n✅ VERIFICATION PASSED - All candidates match baseline!")
+        # Also check ESS counts
+        ess_failures = []
+        for result in results:
+            if result["result"]["success"]:
+                actual_ess = result["result"]["ess_count"]
+                expected_ess = result.get("number_ess_expected", None)
+                if expected_ess is not None and actual_ess != expected_ess:
+                    ess_failures.append({
+                        "id": result["id"],
+                        "actual": actual_ess,
+                        "expected": expected_ess
+                    })
+        
+        if verification["status"] == "PASS" and len(ess_failures) == 0:
+            print(f"\n✅ VERIFICATION PASSED - All candidates match baseline and ESS counts are correct!")
         else:
             print(f"\n❌ VERIFICATION FAILED:")
+            if ess_failures:
+                print(f"\n  ESS count mismatches ({len(ess_failures)} matrices):")
+                for failure in ess_failures:
+                    print(f"    Matrix ID {failure['id']}: got {failure['actual']} ESS, expected {failure['expected']}")
             
             # Show errors (matrices not in baseline)
             if verification["errors"]:

@@ -27,7 +27,7 @@ void fracessa::check_stability()
         return;
     }
 
-    matrix<rational> bee = matrix<rational>(extended_support_size_reduced,extended_support_size_reduced);
+    RationalMatrix bee = RationalMatrix::Zero(extended_support_size_reduced,extended_support_size_reduced);
 
     size_t row = 0;
     size_t column = 0;
@@ -44,11 +44,11 @@ void fracessa::check_stability()
         }
 
     if (conf_with_log && _logger) {
-        _logger->info("matrix bee:\n{}", bee.to_string());
+        _logger->info("matrix bee:\n{}", matrix_ops::to_string(bee));
     }
 
     if (!conf_exact) {
-        if (bee.to_double().is_positive_definite_double()) {
+        if (matrix_ops::is_positive_definite_double(matrix_ops::to_double(bee))) {
 
             if (conf_with_log && _logger)
                 _logger->info("Reason: true_posdef_double");
@@ -58,7 +58,7 @@ void fracessa::check_stability()
         }
     }
 
-    if (bee.is_positive_definite()) {
+    if (matrix_ops::is_positive_definite(bee)) {
 
         if (conf_with_log && _logger)
             _logger->info("Reason: true_posdef_rational");
@@ -89,7 +89,7 @@ void fracessa::check_stability()
     std::vector<bitset64> kay_vee(r+1);
     std::vector<size_t> kay_vee_size(r+1);
     std::vector<bitset64> jay_without_kay_vee(r+1);
-    std::vector< matrix<rational>> bee_vee(r+1);
+    std::vector< RationalMatrix> bee_vee(r+1);
 
 
     kay_vee[0] = jay;
@@ -104,7 +104,7 @@ void fracessa::check_stability()
         _logger->info("kay_vee_size[0]: {}", kay_vee_size[0]);
         _logger->info("jay_without_kay_vee[0]: {}", jay_without_kay_vee[0].to_bitstring(dimension));
         _logger->info("r: {}", r);
-        _logger->info("bee_vee[0]:\n{}", bee_vee[0].to_string());
+        _logger->info("bee_vee[0]:\n{}", matrix_ops::to_string(bee_vee[0]));
     }
 
     for (size_t v=1; v<=r; v++) {
@@ -113,7 +113,7 @@ void fracessa::check_stability()
         jay_without_kay_vee[v] = jay_without_kay_vee[v-1].subtract(iv, dimension); //remove iv from jay\kay
         kay_vee[v] = kay_vee[v-1].subtract(iv, dimension); //build kay_vee
         kay_vee_size[v] = kay_vee_size[v-1]-1; //kay_vee_size
-        bee_vee[v] = matrix<rational>(kay_vee_size[v],kay_vee_size[v]);
+        bee_vee[v] = RationalMatrix::Zero(kay_vee_size[v],kay_vee_size[v]);
 
         // Find the position of iv within kay_vee[v-1] by counting set bits before it
         size_t index_position_to_remove = 0;
@@ -154,7 +154,7 @@ void fracessa::check_stability()
         }
 
         if (conf_with_log && _logger) {
-            _logger->info("bee_vee:\n{}", bee_vee[v].to_string());
+            _logger->info("bee_vee:\n{}", matrix_ops::to_string(bee_vee[v]));
         }
     }
 
@@ -162,7 +162,7 @@ void fracessa::check_stability()
     if (conf_with_log && _logger)
         _logger->info("Copositivity Check:");
 
-    if (bee_vee[r].is_copositive()) {
+    if (matrix_ops::is_copositive(bee_vee[r])) {
         if (conf_with_log && _logger)
             _logger->info("Reason: true_copositive");
         _c.reason_ess = ReasonEss::true_copositive;

@@ -9,7 +9,7 @@ class candidate
 {
     public:
         size_t candidate_id = 0;
-        std::vector<rational> vector;
+        RationalVector vector;
         bitset64 support;
         size_t support_size;
         bitset64 extended_support;
@@ -25,9 +25,11 @@ class candidate
         {
             std::string str = "";
             str += std::to_string(candidate_id) + ";";
-            for (auto x : vector)
-                str += x.template convert_to<std::string>() + ",";
-            str.pop_back();
+            for (Eigen::Index i = 0; i < vector.size(); i++) {
+                str += vector(i).template convert_to<std::string>() + ",";
+            }
+            if (vector.size() > 0)
+                str.pop_back();
             str += ";" + std::to_string(support.to_uint64()) + ";";
             str += std::to_string(support_size) + ";";
             str += std::to_string(extended_support.to_uint64()) + ";";

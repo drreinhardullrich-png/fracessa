@@ -1,5 +1,14 @@
 cmake_minimum_required(VERSION 3.10.2)
 
+# Use -O3 for maximum optimization
+# Set before project() to override default Release flags
+# Add -pg for gprof profiling
+set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG -pg" CACHE STRING "Flags used by the C++ compiler during release builds" FORCE)
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pg" CACHE STRING "Linker flags for profiling" FORCE)
+
+# Debug build configuration
+set(CMAKE_CXX_FLAGS_DEBUG "-g -O0 -Wall -Wextra -Wpedantic" CACHE STRING "Flags used by the C++ compiler during debug builds" FORCE)
+
 project(fracessa
     VERSION 1.0.0
     DESCRIPTION "FRACESSA - Fractional ESS Analyzer - A solver for Standard Quadratic Problems"

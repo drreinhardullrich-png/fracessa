@@ -40,10 +40,14 @@ class Matrix:
         
         if self.dimension is None:
             # Auto-detect dimension
-            # Try to find square dimension (for general matrices)
-            dim = int(n ** 0.5)
-            if dim * dim == n:
-                self.dimension = dim
+            # Try circular symmetric first (floor(dimension/2) elements)
+            # For n elements, dimension could be 2*n (even) or 2*n+1 (odd)
+            # Try symmetric matrix (upper triangular: dimension*(dimension+1)/2 elements)
+            # Solve: n = d*(d+1)/2 => d² + d - 2n = 0 => d = (-1 + sqrt(1+8n))/2
+            import math
+            symmetric_dim = int((-1 + math.sqrt(1 + 8*n)) / 2)
+            if symmetric_dim * (symmetric_dim + 1) // 2 == n:
+                self.dimension = symmetric_dim
                 self.is_circular = False
             elif self.is_circular:
                 # For circular symmetric matrices, we need dimension to be provided
@@ -59,10 +63,10 @@ class Matrix:
                 if n != expected_elements:
                     raise ValueError(f"Circular symmetric matrix with dimension {self.dimension} should have {expected_elements} elements, but got {n}")
             else:
-                # General matrix: should have dimension² elements
-                expected_elements = self.dimension * self.dimension
+                # Symmetric matrix: should have dimension*(dimension+1)/2 elements (upper triangular)
+                expected_elements = self.dimension * (self.dimension + 1) // 2
                 if n != expected_elements:
-                    raise ValueError(f"General matrix with dimension {self.dimension} should have {expected_elements} elements, but got {n}")
+                    raise ValueError(f"Symmetric matrix with dimension {self.dimension} should have {expected_elements} elements (upper triangular), but got {n}")
 
     def to_cli_string(self) -> str:
         """Convert to command-line format for fracessa executable."""
