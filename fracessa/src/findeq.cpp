@@ -1,6 +1,7 @@
 #include <fracessa/fracessa.hpp>
 #include <fracessa/bitset64.hpp>
-#include <fracessa/eigen_extensions.hpp>
+#include <eigen_extensions/bareiss_lu.hpp>
+#include <eigen_extensions/bareiss_ldlt.hpp>
 #include <fracessa/helper.hpp>
 #include <Eigen/LU>
 #include <limits>
@@ -164,6 +165,61 @@ bool fracessa::check_constraints(const RationalVector& solution, const RationalV
     return true;
 }
 
+bool fracessa::find_candidate_double_optimized(DoubleMatrix& A_SS)
+{
+    // Note: Principal submatrices of circulant matrices are NOT necessarily circulant,
+    // so we cannot use FFT solver here. We always use LDLT for principal submatrices.
+    // FFT solver would only be applicable for the full circulant matrix, not submatrices.
+    
+    // Use LDLT decomposition to solve A_{S,S} * v = 1_k
+    Eigen::LDLT<DoubleMatrix> ldlt(A_SS);
+    
+    // Check if LDLT succeeded (matrix must be positive or negative definite)
+    if (ldlt.info() != Eigen::Success) {
+        return false; // Matrix is indefinite, fall back to standard method
+    }
+    
+    // Create vector of ones (1_k)
+    DoubleVector ones_k = DoubleVector::Ones(_c.support_size);
+    
+    // Solve A_{S,S} * v = 1_k
+    DoubleVector v = ldlt.solve(ones_k);
+    
+    // Calculate s = 1_k^T * v
+    double s = DoubleVector::Ones(_c.support_size).dot(v);
+    
+    // Check if s is too close to zero (would cause division by zero)
+    const double tol = std::numeric_limits<double>::epsilon();
+    if (std::abs(s) < tol) {
+        return false;
+    }
+    
+    // Calculate x_S = v / s
+    DoubleVector x_S = v / s;
+    
+    // Calculate lambda = 1 / s
+    double lambda = 1.0 / s;
+    
+    // Construct full solution vector [x_S, lambda] of size (support_size + 1)
+    DoubleVector solution(_c.support_size + 1);
+    solution.head(_c.support_size) = x_S;
+    solution(_c.support_size) = lambda;
+    
+    DoubleVector solution_full_n;
+    
+    // Build large vector, if none of the elements is too negative
+    if (!build_solution_vector(solution, solution_full_n)) {
+        return false;
+    }
+
+    // check p'Ap<=v for all rows not in the support
+    if (!check_constraints(solution, solution_full_n)) {
+        return false;
+    }
+    
+    return true;
+}
+
 bool fracessa::find_candidate_double(DoubleMatrix& A, DoubleVector& b)
 {
     Eigen::PartialPivLU<DoubleMatrix> lu(A);
@@ -191,6 +247,61 @@ bool fracessa::find_candidate_double(DoubleMatrix& A, DoubleVector& b)
     return true;
 }
 
+
+bool fracessa::find_candidate_rational_optimized(RationalMatrix& A_SS)
+{
+    // Use BareissLU to solve A_{S,S} * v = 1_k (A_SS is symmetric)
+    Eigen::Ext::BareissLU<RationalMatrix> bareiss(A_SS);
+    
+    // Create vector of ones (1_k)
+    RationalVector ones_k = RationalVector::Ones(_c.support_size);
+    
+    // Solve A_{S,S} * v = 1_k
+    RationalVector v;
+    if (!bareiss.solve(ones_k, v)) {
+        return false; // Matrix is singular, fall back to standard method
+    }
+    
+    // Calculate s = 1_k^T * v
+    rational s = v.sum();
+    
+    // Check if s is zero (would cause division by zero)
+    if (s == rational(0)) {
+        return false;
+    }
+    
+    // Calculate x_S = v / s
+    RationalVector x_S = v / s;
+    
+    // Calculate lambda = 1 / s
+    rational lambda = rational(1) / s;
+    
+    // Construct full solution vector [x_S, lambda] of size (support_size + 1)
+    RationalVector solution(_c.support_size + 1);
+    solution.head(_c.support_size) = x_S;
+    solution(_c.support_size) = lambda;
+    
+    RationalVector solution_full_n;
+    
+    // Build large vector, if all elements are not too negative
+    if (!build_solution_vector(solution, solution_full_n)) {
+        return false;
+    }
+
+    // check p'Ap<=v for all rows not in the support
+    bitset64 extended_support = _c.support;
+    if (!check_constraints(solution, solution_full_n, extended_support)) {
+        return false;
+    }
+    
+    _c.vector = solution_full_n;
+    _c.extended_support = extended_support;
+    _c.extended_support_size = extended_support.count();
+    _c.payoff = solution(_c.support_size);
+    _c.payoff_double = static_cast<double>(_c.payoff);
+
+    return true;
+}
 
 bool fracessa::find_candidate_rational(RationalMatrix& A, RationalVector& b)
 {

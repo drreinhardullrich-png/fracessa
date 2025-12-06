@@ -9,6 +9,7 @@
 #include <fracessa/bitset64.hpp>
 #include <fracessa/rational_eigen.hpp>
 #include <Eigen/Dense>
+#include <eigen_extensions/bareiss_ldlt.hpp>
 
 // Type aliases for Eigen matrices and vectors
 using RationalMatrix = Eigen::Matrix<rational, Eigen::Dynamic, Eigen::Dynamic>;
@@ -83,18 +84,8 @@ inline DoubleMatrix to_double(const RationalMatrix& A)
 }
 
 // String representation
-inline std::string to_string(const RationalMatrix& A)
-{
-  std::ostringstream oss;
-  for (Eigen::Index i=0; i<static_cast<Eigen::Index>(A.rows()); i++) {
-    for (Eigen::Index j=0; j<static_cast<Eigen::Index>(A.cols()); j++)
-      oss << A(i,j) << ",";
-    oss << std::endl;
-  }
-  return oss.str();
-}
-
-inline std::string to_string(const DoubleMatrix& A)
+template<typename MatrixType>
+inline std::string to_string(const MatrixType& A)
 {
   std::ostringstream oss;
   for (Eigen::Index i=0; i<static_cast<Eigen::Index>(A.rows()); i++) {
@@ -206,8 +197,37 @@ inline void get_kkt_rhs(size_t support_size, RationalVector& b)
   b(static_cast<Eigen::Index>(support_size)) = 1;
 }
 
+// Extract principal submatrix from matrix using bitset64 mask (reuse version for optimization)
+template<typename MatrixType>
+inline void principal_submatrix(const MatrixType& A, size_t dimension, const bitset64& support, size_t support_size, MatrixType& submatrix)
+{
+  // Only resize if needed, and matrix is square, so check for rows is sufficient
+  if (submatrix.rows() != static_cast<Eigen::Index>(support_size)) {
+    submatrix = MatrixType::Zero(support_size, support_size);
+  } else {
+    submatrix.setZero();
+  }
+  
+  size_t row = 0;
+  for (size_t i = 0; i < dimension; ++i) {
+    if (support.test(i)) {
+      size_t col = 0;
+      for (size_t j = 0; j < dimension; ++j) {
+        if (support.test(j)) {
+          submatrix(row, col) = A(static_cast<Eigen::Index>(i), static_cast<Eigen::Index>(j));
+          ++col;
+        }
+      }
+      ++row;
+    }
+  }
+}
+
+
+
+
 // Check if matrix is positive definite (LDLT decomposition for rational)
-inline bool is_positive_definite(const RationalMatrix& A)
+inline bool is_positive_definite_rational(const RationalMatrix& A)
 {
   //ldlt-decomposition for rational numbers
   int n = A.rows();
@@ -230,6 +250,52 @@ inline bool is_positive_definite(const RationalMatrix& A)
   }
   return true;
 }
+
+// // Bareiss fraction-free elimination algorithm to check for Positive Definiteness
+// inline bool is_positive_definite_rational(const RationalMatrix& A) {
+//   int n = A.rows();
+//   RationalMatrix B = A;                    // Working copy (will become Δ)
+//   RationalMatrix L = RationalMatrix::Identity(n, n);  // Unit lower triangular
+//   rational prevPivot = rational(1);
+  
+//   for (int k = 0; k < n; ++k) {
+//       // Extract pivot from transformed matrix
+//       rational pivot = B(k, k);
+      
+//       // Sylvester's criterion: all pivots must be positive
+//       if (pivot <= rational(0)) {
+//           return false;  // NOT positive definite
+//       }
+      
+//       // Store multipliers for L (BEFORE updating B!)
+//       for (int i = k + 1; i < n; ++i) {
+//           L(i, k) = B(i, k);  // Store numerator, not quotient
+//       }
+      
+//       // Bareiss update for remaining submatrix
+//       // Only update if not last iteration
+//       if (k < n - 1) {
+//           for (int i = k + 1; i < n; ++i) {
+//               // Update diagonal element
+//               B(i, i) = (B(i, i) * pivot - B(i, k) * B(i, k)) / prevPivot;
+              
+//               // Update off-diagonal elements (upper triangle only)
+//               for (int j = i + 1; j < n; ++j) {
+//                   B(i, j) = (B(i, j) * pivot - B(i, k) * B(k, j)) / prevPivot;
+//               }
+//           }
+          
+//           // Zero out column k (except diagonal)
+//           for (int i = k + 1; i < n; ++i) {
+//               B(i, k) = rational(0);
+//           }
+          
+//           prevPivot = pivot;
+//       }
+//   }
+  
+//   return true;  // All pivots positive
+// }
 
 // Check if matrix is positive definite (Cholesky for double)
 inline bool is_positive_definite_double(const DoubleMatrix& A)
@@ -366,7 +432,7 @@ inline bool greater_zero(const RationalMatrix& A)
 }
 
 // Check if matrix is copositive
-inline bool is_copositive(const RationalMatrix& A)
+inline bool is_strictly_copositive(const RationalMatrix& A)
 {
   bool result = true;
   size_t n_rows = static_cast<size_t>(A.rows());

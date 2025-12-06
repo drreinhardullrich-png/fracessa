@@ -2,6 +2,8 @@
 #include <vector>
 #include <cassert>
 #include <string>
+#include <chrono>
+#include <iomanip>
 
 #include <fracessa/fracessa.hpp>
 #include <fracessa/matrix.hpp>
@@ -30,6 +32,10 @@ int main(int argc, char *argv[])
         .help("searches the full support directly after searching support size one. Enable if you expect the matrix to have exactly one ess in the interior of the simplex!")
         .flag();
 
+    program.add_argument("-t", "--timing")
+        .help("output the computation time in seconds on a new line after the ESS count")
+        .flag();
+
     program.add_argument("matrix")
         .help("the matrix to compute");
 
@@ -47,6 +53,7 @@ int main(int argc, char *argv[])
     auto logger = program.get<bool>("--log");
     auto exact = program.get<bool>("--exact");
     auto fullsupport = program.get<bool>("--fullsupport");
+    auto timing = program.get<bool>("--timing");
 
     // Parse CLI string format: "n#values"
     std::vector<std::string> first_split;
@@ -96,9 +103,21 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
     
+    // Measure computation time
+    auto start_time = std::chrono::high_resolution_clock::now();
     ::fracessa x = ::fracessa(A, is_cs, candidates, exact, fullsupport, logger);
+    auto end_time = std::chrono::high_resolution_clock::now();
+    
+    // Calculate elapsed time in seconds
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+    double elapsed_seconds = duration.count() / 1000000.0;
 
     std::cout << x.ess_count << std::endl;
+    
+    // Output timing on second line if -t flag is present
+    if (timing) {
+        std::cout << std::fixed << std::setprecision(4) << elapsed_seconds << std::endl;
+    }
 
     if (candidates) {
         std::cout << candidate::header() << std::endl;

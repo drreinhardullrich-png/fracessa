@@ -252,6 +252,11 @@ public:
     // convenience: return the underlying mask (low bits contain data)
     FORCE_INLINE uint64_t to_uint64() const noexcept { return bits_; }
     FORCE_INLINE uint64_t to_uint64(unsigned nbits) const noexcept { return bits_ & compute_mask(nbits); }
+    
+    // Convert to string representation (decimal representation of uint64)
+    inline std::string to_string() const noexcept {
+        return std::to_string(bits_);
+    }
 
     // set from a raw mask (low bits used)
     FORCE_INLINE void set_mask(uint64_t mask, unsigned nbits) noexcept { bits_ = mask & compute_mask(nbits); }

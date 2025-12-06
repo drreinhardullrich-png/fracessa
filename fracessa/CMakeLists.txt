@@ -1,13 +1,27 @@
 cmake_minimum_required(VERSION 3.10.2)
 
-# Use -O3 for maximum optimization
-# Set before project() to override default Release flags
-# Add -pg for gprof profiling
-set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG -pg" CACHE STRING "Flags used by the C++ compiler during release builds" FORCE)
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pg" CACHE STRING "Linker flags for profiling" FORCE)
+# FORCE Release build type - this project only builds in Release mode
+# Set before project() to ensure it's applied from the start
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+    message(STATUS "Build type not specified, forcing Release")
+endif()
 
-# Debug build configuration
-set(CMAKE_CXX_FLAGS_DEBUG "-g -O0 -Wall -Wextra -Wpedantic" CACHE STRING "Flags used by the C++ compiler during debug builds" FORCE)
+# Maximum optimization flags for Release builds
+# -O3: Highest optimization level
+# -DNDEBUG: Disable assertions for performance
+# -flto: Link-Time Optimization (cross-module optimizations)
+#   Note: For faster compilation with minimal runtime loss, use -flto=thin (requires GCC 6+ or Clang)
+#   For older compilers, regular -flto is used (slower compile but same runtime performance)
+# Note: -march=native and -mtune=native are commented out for portability
+#       Uncomment them if you want CPU-specific optimizations (10-20% faster but not portable)
+set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG -flto" CACHE STRING "Flags used by the C++ compiler during release builds" FORCE)
+set(CMAKE_C_FLAGS_RELEASE "-O3 -DNDEBUG -flto" CACHE STRING "Flags used by the C compiler during release builds" FORCE)
+set(CMAKE_EXE_LINKER_FLAGS_RELEASE "-flto" CACHE STRING "Linker flags for Release builds" FORCE)
+set(CMAKE_SHARED_LINKER_FLAGS_RELEASE "-flto" CACHE STRING "Shared linker flags for Release builds" FORCE)
+
+# Disable Debug builds - they are not supported
+# If someone tries to build Debug, they'll get an error above
 
 project(fracessa
     VERSION 1.0.0
@@ -20,8 +34,60 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# Enforce Release build type after project() is called
+if(NOT CMAKE_BUILD_TYPE STREQUAL "Release")
+    message(FATAL_ERROR "Only Release builds are supported. Current build type: ${CMAKE_BUILD_TYPE}")
+endif()
+
+# Apply maximum optimization flags to all targets
+# These are applied in addition to CMAKE_CXX_FLAGS_RELEASE
+if(CMAKE_BUILD_TYPE STREQUAL "Release" AND NOT MSVC)
+    # Check if compiler supports thin LTO (GCC 6+ or Clang)
+    # Thin LTO compiles faster than full LTO with ~95-99% of runtime performance
+    include(CheckCXXCompilerFlag)
+    check_cxx_compiler_flag("-flto=thin" COMPILER_SUPPORTS_THIN_LTO)
+    
+    if(COMPILER_SUPPORTS_THIN_LTO)
+        add_compile_options(-flto=thin)
+        add_link_options(-flto=thin)
+        message(STATUS "Release build with maximum optimizations: -O3 -flto=thin (faster compilation)")
+    else()
+        # Fall back to regular LTO for older compilers
+        add_compile_options(-flto)
+        add_link_options(-flto)
+        # Optimize LTO compilation speed: use single partition to reduce memory usage
+        add_compile_options(-flto-partition=none)
+        message(STATUS "Release build with maximum optimizations: -O3 -flto (using -flto-partition=none for faster compilation)")
+    endif()
+    
+    # Additional aggressive optimizations (optional - uncomment if needed)
+    # add_compile_options(-march=native -mtune=native)  # CPU-specific optimizations (not portable)
+    # add_compile_options(-ffast-math)  # Aggressive math optimizations (may affect precision)
+endif()
+
+# Enable compiler cache for faster rebuilds (if available)
+# ccache significantly speeds up recompilation by caching object files
+find_program(CCACHE_PROGRAM ccache)
+if(CCACHE_PROGRAM)
+    set(CMAKE_CXX_COMPILER_LAUNCHER ${CCACHE_PROGRAM})
+    set(CMAKE_C_COMPILER_LAUNCHER ${CCACHE_PROGRAM})
+    message(STATUS "Using ccache for faster compilation: ${CCACHE_PROGRAM}")
+else()
+    message(STATUS "ccache not found - install it for faster rebuilds: sudo apt-get install ccache")
+endif()
+
 # Generate compile_commands.json for IDE support
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+# Optimize compilation speed with parallel builds
+# This sets the default number of parallel jobs for cmake --build
+# Users can still override with: cmake --build . --parallel N
+include(ProcessorCount)
+ProcessorCount(N)
+if(NOT N EQUAL 0)
+    set(CMAKE_BUILD_PARALLEL_LEVEL ${N} CACHE STRING "Number of parallel build jobs")
+    message(STATUS "Parallel build level set to ${N} cores (override with: cmake --build . --parallel N)")
+endif()
 
 # Build configuration options
 option(BUILD_SHARED_LIBS "Build shared libraries instead of static" OFF)

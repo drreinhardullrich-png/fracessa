@@ -77,7 +77,9 @@ void fracessa::search_support_size(size_t support_size) //uses real supportsize 
     // Initialize matrices once per support_size for reuse
     DoubleMatrix A_double;
     DoubleVector b_double;
+    DoubleMatrix A_SS;  // Principal submatrix for optimized path (double)
     RationalMatrix A_rational;
+    RationalMatrix A_SS_rational;  // Principal submatrix for optimized path (rational)
     RationalVector b_rational;
     if (!conf_exact) {
         matrix_ops::get_kkt_rhs(support_size, b_double);
@@ -91,30 +93,37 @@ void fracessa::search_support_size(size_t support_size) //uses real supportsize 
 
         _c.support = support;
 
-        std::string support_log_msg;
         if (!conf_exact) {
-            if (conf_with_log && _logger) {
-                support_log_msg = "[" + std::to_string(_c.support.to_uint64()) + "]";
+            // Extract principal submatrix A_{S,S} for optimized path
+            matrix_ops::principal_submatrix(game_matrix_double, dimension, _c.support, _c.support_size, A_SS);
+            
+            // Try optimized block inversion approach first
+            bool optimized_success = find_candidate_double_optimized(A_SS);
+            
+            if (!optimized_success) {
+                // Fall back to standard method if matrix is indefinite
+                matrix_ops::get_kkt_bordering(game_matrix_double, _c.support, _c.support_size, A_double);
+                if (!find_candidate_double(A_double, b_double))
+                    continue;
             }
-            // Update matrix A based on current support
-            matrix_ops::get_kkt_bordering(game_matrix_double, _c.support, _c.support_size, A_double);
-            if (!find_candidate_double(A_double, b_double))
-                continue;
         }
 
         if (conf_with_log && _logger) {
-            // Combine support and rational messages like the old format
-            if (!conf_exact) {
-                _logger->info("{}[rational: {}]", support_log_msg, _c.support.to_uint64());
-            } else {
-                _logger->info("[rational: {}]", _c.support.to_uint64());
-            }
+            _logger->info("[rational: {}]", _c.support.to_string());
         }
 
-        // Update matrix A based on current support
-        matrix_ops::get_kkt_bordering(game_matrix, _c.support, _c.support_size, A_rational);
-        if (!find_candidate_rational(A_rational, b_rational))
-            continue;
+        // Extract principal submatrix A_{S,S} for optimized path (rational)
+        matrix_ops::principal_submatrix(game_matrix, dimension, _c.support, _c.support_size, A_SS_rational);
+        
+        // Try optimized block inversion approach first
+        bool optimized_success = find_candidate_rational_optimized(A_SS_rational);
+        
+        if (!optimized_success) {
+            // Fall back to standard method if matrix is singular
+            matrix_ops::get_kkt_bordering(game_matrix, _c.support, _c.support_size, A_rational);
+            if (!find_candidate_rational(A_rational, b_rational))
+                continue;
+        }
 
         _c.candidate_id++;
 

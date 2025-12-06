@@ -30,16 +30,6 @@ static constexpr uint64_t UINT64_MAX_VALUE = 18446744073709551615ULL;
 #endif
 
 
-enum class ReasonEss : int
-{
-    true_pure_ess = 1,
-    true_posdef_double = 2,
-    true_posdef_rational = 3,
-    true_copositive = 4,
-    false_not_posdef_and_kay_0_1 = 5,
-    false_not_partial_copositive = 6,
-    false_not_copositive = 7
-};
 
 
 #ifdef _MSC_VER

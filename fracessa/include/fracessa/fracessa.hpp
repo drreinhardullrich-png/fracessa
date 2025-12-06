@@ -43,7 +43,9 @@ class fracessa
         std::shared_ptr<spdlog::logger> _logger;
 
         void search_support_size(size_t support_size);
+        bool find_candidate_double_optimized(DoubleMatrix& A_SS);
         bool find_candidate_double(DoubleMatrix& A, DoubleVector& b);
+        bool find_candidate_rational_optimized(RationalMatrix& A_SS);
         bool find_candidate_rational(RationalMatrix& A, RationalVector& b);
         void check_stability();
         

@@ -1,5 +1,6 @@
 #include <fracessa/fracessa.hpp>
 #include <fracessa/bitset64.hpp>
+#include <Eigen/Cholesky>
 
 void fracessa::check_stability()
 {
@@ -22,7 +23,7 @@ void fracessa::check_stability()
 
         if (conf_with_log && _logger)
             _logger->info("Reason: true_pure_ess");
-        _c.reason_ess = ReasonEss::true_pure_ess;
+        _c.stability = "T_pure_ess";
         _c.is_ess = true;
         return;
     }
@@ -47,22 +48,34 @@ void fracessa::check_stability()
         _logger->info("matrix bee:\n{}", matrix_ops::to_string(bee));
     }
 
-    if (!conf_exact) {
-        if (matrix_ops::is_positive_definite_double(matrix_ops::to_double(bee))) {
-
+    //dont need to care too much about precision/tolerance here, since if true we will do rational check, otherwise we find it later anyways....
+    if (!conf_exact) {       
+        DoubleMatrix bee_double = matrix_ops::to_double(bee);
+        
+        // Use is_positive_definite_double to check positive definiteness
+        if (matrix_ops::is_positive_definite_double(bee_double)) {
             if (conf_with_log && _logger)
                 _logger->info("Reason: true_posdef_double");
-            _c.reason_ess = ReasonEss::true_posdef_double;
+            _c.stability = "T_pd_double";
             _c.is_ess = true;
             return;
         }
+        // // Old code using Eigen's LLT (Cholesky) decomposition
+        // Eigen::LLT<DoubleMatrix> llt(bee_double);
+        // if (llt.info() == Eigen::Success) {
+        //     if (conf_with_log && _logger)
+        //         _logger->info("Reason: true_posdef_double");
+        //     _c.reason_ess = ReasonEss::true_posdef_double;
+        //     _c.is_ess = true;
+        //     return;
+        // }
     }
 
-    if (matrix_ops::is_positive_definite(bee)) {
+    if (matrix_ops::is_positive_definite_rational(bee)) {
 
         if (conf_with_log && _logger)
             _logger->info("Reason: true_posdef_rational");
-        _c.reason_ess = ReasonEss::true_posdef_rational;
+        _c.stability = "T_pd_rat";
         _c.is_ess = true;
         return;
     }
@@ -76,7 +89,7 @@ void fracessa::check_stability()
     if (kay_size==0 || kay_size==1) {
         if (conf_with_log && _logger)
             _logger->info("Reason: false_not_posdef_and_kay_0_1");
-        _c.reason_ess = ReasonEss::false_not_posdef_and_kay_0_1;
+        _c.stability = "F_not_pd_kay_0_1";
         _c.is_ess = false;
         return;
     }
@@ -137,7 +150,7 @@ void fracessa::check_stability()
 
             if (conf_with_log && _logger)
                 _logger->info("Reason: false_not_partial_copositive");
-            _c.reason_ess = ReasonEss::false_not_partial_copositive;
+            _c.stability = "F_not_part_copos";
             _c.is_ess = false;
             return;
         }
@@ -162,16 +175,16 @@ void fracessa::check_stability()
     if (conf_with_log && _logger)
         _logger->info("Copositivity Check:");
 
-    if (matrix_ops::is_copositive(bee_vee[r])) {
+    if (matrix_ops::is_strictly_copositive(bee_vee[r])) {
         if (conf_with_log && _logger)
             _logger->info("Reason: true_copositive");
-        _c.reason_ess = ReasonEss::true_copositive;
+        _c.stability = "T_copos";
         _c.is_ess = true;
         return;
     } else {
         if (conf_with_log && _logger)
             _logger->info("Reason: false_not_copositive");
-        _c.reason_ess = ReasonEss::false_not_copositive;
+        _c.stability = "F_not_copos";
         _c.is_ess = false;
         return;
     }

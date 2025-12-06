@@ -16,7 +16,7 @@ class candidate
         size_t extended_support_size;
         size_t shift_reference;
         bool is_ess;
-        ReasonEss reason_ess;
+        std::string stability;
         rational payoff;
         double payoff_double;
 
@@ -30,13 +30,13 @@ class candidate
             }
             if (vector.size() > 0)
                 str.pop_back();
-            str += ";" + std::to_string(support.to_uint64()) + ";";
+            str += ";" + support.to_string() + ";";
             str += std::to_string(support_size) + ";";
-            str += std::to_string(extended_support.to_uint64()) + ";";
+            str += extended_support.to_string() + ";";
             str += std::to_string(extended_support_size) + ";";
             str += std::to_string(shift_reference) + ";";
             str += std::to_string(is_ess) + ";";
-            str += std::to_string((int)reason_ess) + ";";
+            str += stability + ";";
             str += payoff.template convert_to<std::string>() + ";";
             str += std::to_string(payoff_double);
 
@@ -45,7 +45,7 @@ class candidate
 
         static std::string header()
         {
-            return "candidate_id;vector;support;support_size;extended_support;extended_support_size;shift_reference;is_ess;reason_ess;payoff;payoff_double;";
+            return "candidate_id;vector;support;support_size;extended_support;extended_support_size;shift_reference;is_ess;stability;payoff;payoff_double;";
         }
 };
 
