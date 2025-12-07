@@ -36,6 +36,11 @@ int main(int argc, char *argv[])
         .help("output the computation time in seconds on a new line after the ESS count")
         .flag();
 
+    program.add_argument("-m", "--matrix-id")
+        .help("optional matrix ID to write in the log file")
+        .scan<'i', int>()
+        .default_value(-1);
+
     program.add_argument("matrix")
         .help("the matrix to compute");
 
@@ -54,6 +59,7 @@ int main(int argc, char *argv[])
     auto exact = program.get<bool>("--exact");
     auto fullsupport = program.get<bool>("--fullsupport");
     auto timing = program.get<bool>("--timing");
+    auto matrix_id = program.get<int>("--matrix-id");
 
     // Parse CLI string format: "n#values"
     std::vector<std::string> first_split;
@@ -105,7 +111,7 @@ int main(int argc, char *argv[])
     
     // Measure computation time
     auto start_time = std::chrono::high_resolution_clock::now();
-    ::fracessa x = ::fracessa(A, is_cs, candidates, exact, fullsupport, logger);
+    ::fracessa x = ::fracessa(A, is_cs, candidates, exact, fullsupport, logger, matrix_id);
     auto end_time = std::chrono::high_resolution_clock::now();
     
     // Calculate elapsed time in seconds

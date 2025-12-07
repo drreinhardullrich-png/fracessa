@@ -1,11 +1,12 @@
 #include <fracessa/fracessa.hpp>
 #include <fracessa/bitset64.hpp>
 
-fracessa::fracessa(const RationalMatrix& matrix, bool is_cs, bool with_candidates, bool exact, bool full_support, bool with_log)
+fracessa::fracessa(const RationalMatrix& matrix, bool is_cs, bool with_candidates, bool exact, bool full_support, bool with_log, int matrix_id)
 {
 
     game_matrix = matrix;
     this->is_cs = is_cs;
+    this->matrix_id = matrix_id;
     conf_with_candidates = with_candidates;
     conf_exact = exact;
     conf_full_support = full_support;
@@ -27,6 +28,17 @@ fracessa::fracessa(const RationalMatrix& matrix, bool is_cs, bool with_candidate
         _logger->set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%l] %v");
         _logger->set_level(spdlog::level::info);
         
+        // Write empty line and 3 lines of asterisks and hash symbols as first lines in log
+        _logger->info("");
+        _logger->info("*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#*");
+        _logger->info("#*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#");
+        _logger->info("*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#*");
+        
+        // Write matrix_id as first line in log
+        if (matrix_id >= 0) {
+            _logger->info("matrix_id={}", matrix_id);
+        }
+        
         _logger->info("n={}", dimension);
         _logger->info("game matrix:\n{}", matrix_ops::to_string(game_matrix));
     }
@@ -40,17 +52,17 @@ fracessa::fracessa(const RationalMatrix& matrix, bool is_cs, bool with_candidate
         for (size_t i=0; i<dimension; i++)
             _coprime_sizes[i] = (boost::integer::gcd(i+1, dimension) == 1); //support size and dimension are coprime
 
-        bitset64::iterate_all_supports(dimension, [&](const bitset64& support, unsigned nbits) {
-            size_t support_size_minus_one = support.count() - 1;
-            if (_coprime_sizes[support_size_minus_one]) {
-                if (support.smallest_representation(nbits).to_uint64() == support.to_uint64())
-                    (_supports[support_size_minus_one]).push_back(support);
+        bitset64::iterate_all_supports(dimension, [&](const bitset64& support) {
+            size_t this_size = support.count() - 1;
+            if (_coprime_sizes[this_size]) {
+                if (support.smallest_representation(dimension) == support)
+                    (_supports[this_size]).push_back(support);
             } else {
-                (_supports[support_size_minus_one]).push_back(support);
+                (_supports[this_size]).push_back(support);
             }
         });
 	} else {
-        bitset64::iterate_all_supports(dimension, [&](const bitset64& support, unsigned) {
+        bitset64::iterate_all_supports(dimension, [&](const bitset64& support) {
             (_supports[support.count() - 1]).push_back(support);
         });
 	}
@@ -87,7 +99,7 @@ void fracessa::search_support_size(size_t support_size) //uses real supportsize 
     matrix_ops::get_kkt_rhs(support_size, b_rational);
 
     if (conf_with_log && _logger)
-        _logger->info("Searching support size {}", support_size);
+        _logger->info("Searching support size {}:", support_size);
 
     for (auto support : _supports[support_size-1]) {
 
@@ -95,35 +107,31 @@ void fracessa::search_support_size(size_t support_size) //uses real supportsize 
 
         if (!conf_exact) {
             // Extract principal submatrix A_{S,S} for optimized path
-            matrix_ops::principal_submatrix(game_matrix_double, dimension, _c.support, _c.support_size, A_SS);
+            // matrix_ops::principal_submatrix(game_matrix_double, dimension, _c.support, _c.support_size, A_SS);
             
             // Try optimized block inversion approach first
-            bool optimized_success = find_candidate_double_optimized(A_SS);
+            // bool optimized_success = find_candidate_double_optimized(A_SS);
             
-            if (!optimized_success) {
+            // if (!optimized_success) {
                 // Fall back to standard method if matrix is indefinite
                 matrix_ops::get_kkt_bordering(game_matrix_double, _c.support, _c.support_size, A_double);
                 if (!find_candidate_double(A_double, b_double))
                     continue;
-            }
-        }
-
-        if (conf_with_log && _logger) {
-            _logger->info("[rational: {}]", _c.support.to_string());
+            // }
         }
 
         // Extract principal submatrix A_{S,S} for optimized path (rational)
-        matrix_ops::principal_submatrix(game_matrix, dimension, _c.support, _c.support_size, A_SS_rational);
+        // matrix_ops::principal_submatrix(game_matrix, dimension, _c.support, _c.support_size, A_SS_rational);
         
         // Try optimized block inversion approach first
-        bool optimized_success = find_candidate_rational_optimized(A_SS_rational);
+        // bool optimized_success = find_candidate_rational_optimized(A_SS_rational);
         
-        if (!optimized_success) {
+        // if (!optimized_success) {
             // Fall back to standard method if matrix is singular
             matrix_ops::get_kkt_bordering(game_matrix, _c.support, _c.support_size, A_rational);
             if (!find_candidate_rational(A_rational, b_rational))
                 continue;
-        }
+        // }
 
         _c.candidate_id++;
 
@@ -161,7 +169,7 @@ void fracessa::search_support_size(size_t support_size) //uses real supportsize 
 
             for (size_t i=0; i<dimension-1;i++) {
 
-                _c.support = _c.support.rot_r(1, dimension);
+                _c.support.rot_one_right(dimension);
 
                 _c.candidate_id++;
 
@@ -175,7 +183,7 @@ void fracessa::search_support_size(size_t support_size) //uses real supportsize 
                         _c.vector(j) = _c.vector(j + 1);
                     }
                     _c.vector(_c.vector.size() - 1) = first;
-                    _c.extended_support = _c.extended_support.rot_r(1, dimension);
+                    _c.extended_support.rot_one_right(dimension);
                     candidates.push_back(_c);
 
                     if (conf_with_log && _logger) {

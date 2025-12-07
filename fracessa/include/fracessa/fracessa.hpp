@@ -19,7 +19,7 @@ class fracessa
 {
     public:
 
-        fracessa(const RationalMatrix& matrix, bool is_cs, bool with_candidates = false, bool exact = false, bool full_support = false, bool with_log = false);
+        fracessa(const RationalMatrix& matrix, bool is_cs, bool with_candidates = false, bool exact = false, bool full_support = false, bool with_log = false, int matrix_id = -1);
 
         size_t ess_count = 0;
         std::vector<candidate> candidates;
@@ -29,6 +29,7 @@ class fracessa
 
         size_t dimension;
         bool is_cs;
+        int matrix_id;
 
         bool conf_with_candidates;
         bool conf_exact;

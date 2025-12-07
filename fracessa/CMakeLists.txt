@@ -111,6 +111,65 @@ else()
     message(FATAL_ERROR "Local Boost headers not found!")
 endif()
 
+# Option to use GMP backend (faster) or cpp_rational backend (no dependencies)
+# Default: ON if GMP is found, OFF otherwise
+option(USE_GMP "Use GMP backend for rational arithmetic (faster, requires libgmp-dev)" ON)
+
+# Try to find GMP library (optional)
+find_package(GMP QUIET)
+if(NOT GMP_FOUND)
+    # Try finding it manually
+    find_path(GMP_INCLUDE_DIR gmp.h
+        PATHS
+        /usr/include
+        /usr/local/include
+        /opt/homebrew/include  # macOS Homebrew
+    )
+    
+    find_library(GMP_LIBRARY
+        NAMES gmp
+        PATHS
+        /usr/lib
+        /usr/lib/x86_64-linux-gnu
+        /usr/local/lib
+        /opt/homebrew/lib  # macOS Homebrew
+    )
+    
+    find_library(GMPXX_LIBRARY
+        NAMES gmpxx
+        PATHS
+        /usr/lib
+        /usr/lib/x86_64-linux-gnu
+        /usr/local/lib
+        /opt/homebrew/lib  # macOS Homebrew
+    )
+    
+    if(GMP_INCLUDE_DIR AND GMP_LIBRARY AND GMPXX_LIBRARY)
+        message(STATUS "Found GMP: ${GMP_LIBRARY}")
+        message(STATUS "Found GMPXX: ${GMPXX_LIBRARY}")
+        set(GMP_FOUND TRUE)
+    else()
+        set(GMP_FOUND FALSE)
+    endif()
+else()
+    message(STATUS "Found GMP via find_package")
+endif()
+
+# Determine which backend to use
+if(USE_GMP AND GMP_FOUND)
+    message(STATUS "Using GMP backend for rational arithmetic")
+    add_compile_definitions(USE_GMP_RATIONAL)
+    set(USE_GMP_RATIONAL TRUE)
+else()
+    if(USE_GMP AND NOT GMP_FOUND)
+        message(WARNING "USE_GMP is ON but GMP not found. Falling back to cpp_rational backend.")
+        message(STATUS "Install GMP with: sudo apt-get install libgmp-dev")
+    else()
+        message(STATUS "Using cpp_rational backend (pure C++, no dependencies)")
+    endif()
+    set(USE_GMP_RATIONAL FALSE)
+endif()
+
 # Build the core library
 add_library(fracessa_lib
     src/fracessa.cpp
@@ -137,33 +196,14 @@ target_include_directories(fracessa_lib
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
 )
 
-# Test executable for positive definite check comparison
-add_executable(test_posdef
-    src/test_posdef.cpp
-)
-target_include_directories(test_posdef PRIVATE third_party/argparse/include)
-target_link_libraries(test_posdef PRIVATE fracessa_lib)
-
-# Test executable for Eigen LLT
-add_executable(test_eigen_llt
-    src/test_eigen_llt.cpp
-)
-target_include_directories(test_eigen_llt PRIVATE third_party/argparse/include)
-target_link_libraries(test_eigen_llt PRIVATE fracessa_lib)
-
-# Another test executable
-add_executable(another_test
-    src/another_test.cpp
-)
-target_include_directories(another_test PRIVATE third_party/argparse/include)
-target_link_libraries(another_test PRIVATE fracessa_lib)
-
-# Test executable for copositivity comparison
-add_executable(test_copositivity
-    src/test_copositivity.cpp
-)
-target_include_directories(test_copositivity PRIVATE third_party/argparse/include)
-target_link_libraries(test_copositivity PRIVATE fracessa_lib)
+# Link GMP libraries only if using GMP backend
+if(USE_GMP_RATIONAL)
+    if(GMP_INCLUDE_DIR)
+        target_include_directories(fracessa_lib PRIVATE ${GMP_INCLUDE_DIR})
+    endif()
+    target_link_libraries(fracessa_lib PRIVATE ${GMP_LIBRARY} ${GMPXX_LIBRARY})
+    message(STATUS "Linking GMP libraries to fracessa_lib")
+endif()
 
 # Platform-specific configuration
 if(UNIX AND NOT APPLE)

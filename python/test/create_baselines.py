@@ -96,15 +96,22 @@ def find_old_executable(script_dir: Path) -> Path:
     raise FileNotFoundError(f"Old executable not found at {old_exe_path}")
 
 
-def run_old_executable(exe_path: Path, matrix_cli_string: str, timeout: float = 1800.0) -> Tuple[bool, int, List[Dict], float, Optional[str]]:
+def run_old_executable(exe_path: Path, matrix_cli_string: str, matrix_id: int = -1, timeout: float = 1800.0) -> Tuple[bool, int, List[Dict], float, Optional[str]]:
     """
     Run the old executable and parse output.
     The old executable doesn't support -t flag, so we use external timing.
     
+    Args:
+        exe_path: Path to the executable
+        matrix_cli_string: Matrix in CLI format (e.g., "2#0,1,1,0")
+        matrix_id: Optional matrix ID to pass to executable (may not be supported by old executable)
+        timeout: Maximum computation time in seconds
+    
     Returns:
         (success, ess_count, candidates, timing, error_message)
     """
-    # Old executable doesn't support -t flag, so use external timing
+    # Old executable doesn't support -t flag or -m flag, so use external timing
+    # Note: matrix_id is not passed to old executable as it doesn't support -m flag
     cmd = [str(exe_path), "-c", matrix_cli_string]
     
     try:
@@ -133,11 +140,13 @@ def run_old_executable(exe_path: Path, matrix_cli_string: str, timeout: float = 
         
         # Parse candidates
         candidates = []
-        # Old executable doesn't output timing, so candidates start at line 1 (after ESS count)
-        candidate_start_line = 1
-        if len(lines) > candidate_start_line:
-            # candidate_start_line is header, skip it
-            candidate_lines = lines[candidate_start_line + 1:] if len(lines) > candidate_start_line + 1 else []
+        # Old executable output format:
+        # Line 0: ESS count
+        # Line 1: CSV header
+        # Lines 2+: CSV data rows
+        if len(lines) > 2:
+            # Skip line 0 (ESS count) and line 1 (header), process remaining lines
+            candidate_lines = lines[2:]
             
             for line in candidate_lines:
                 if line.strip():
@@ -194,7 +203,7 @@ def process_matrix(matrix_data: Dict, old_exe_path: Path) -> Tuple[Dict, List[Di
     cli_string = f"{dimension}#{matrix_str}"
     
     # Run old executable
-    success, ess_count, candidates, timing, error = run_old_executable(old_exe_path, cli_string)
+    success, ess_count, candidates, timing, error = run_old_executable(old_exe_path, cli_string, matrix_id)
     
     if success:
         # For output, use the new format from 'matrix' field if available

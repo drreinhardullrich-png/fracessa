@@ -182,7 +182,8 @@ class Fracessa:
                    exact_arithmetic: bool = False,
                    full_support_search: bool = False,
                    enable_logging: bool = False,
-                   timeout: float = 0.0) -> ESSResult:
+                   timeout: float = 0.0,
+                   matrix_id: int = -1) -> ESSResult:
         """
         Compute evolutionary stable strategies for a given payoff matrix.
 
@@ -193,6 +194,7 @@ class Fracessa:
             full_support_search: Search full support directly after size 1
             enable_logging: Enable detailed logging to fracessa.log
             timeout: Maximum computation time in seconds (0.0 means no timeout)
+            matrix_id: Optional matrix ID to write in the log file (default: -1, not logged)
 
         Returns:
             ESSResult object containing the computation results
@@ -221,6 +223,9 @@ class Fracessa:
             cmd.append("-l")
         # Always use -t flag to get timing from executable
         cmd.append("-t")
+        if matrix_id >= 0:
+            cmd.append("-m")
+            cmd.append(str(matrix_id))
         cmd.append(cli_string)
 
         try:

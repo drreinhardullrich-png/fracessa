@@ -403,7 +403,8 @@ def process_matrix(matrix_data, executable_path):
             matrix=matrix,
             include_candidates=True,
             enable_logging=False,
-            timeout=1800.0  # 30 minutes timeout
+            timeout=1800.0,  # 30 minutes timeout
+            matrix_id=matrix_id
         )
         
         if result.success:
@@ -647,7 +648,7 @@ def main():
                 print(f"\n✅ All ESS counts match baseline!")
     
     print("="*60)
-    
+
     # Compare runtimes with baseline
     print("\n" + "="*60)
     print("RUNTIME COMPARISON")

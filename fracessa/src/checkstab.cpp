@@ -1,7 +1,7 @@
 #include <fracessa/fracessa.hpp>
 #include <fracessa/bitset64.hpp>
+#include <eigen_extensions/copositivity.hpp>
 #include <Eigen/Cholesky>
-#include <limits>
 
 void fracessa::check_stability()
 {
@@ -133,7 +133,7 @@ void fracessa::check_stability()
     for (size_t v = 1; v <= r; v++) {
         bitset64 iv = jay_without_kay_vee[v-1].lowest_set_bit();
         unsigned iv_pos = iv.find_first();
-        kay_vee[v] = kay_vee[v-1].subtract(iv, dimension);
+        kay_vee[v] = kay_vee[v-1].subtract(iv);
         kay_vee_size[v] = kay_vee_size[v-1] - 1;
         
         size_t pivot_pos = 0;
@@ -167,18 +167,16 @@ void fracessa::check_stability()
     for (size_t v=1; v<=r; v++) {
 
         bitset64 iv = jay_without_kay_vee[v-1].lowest_set_bit(); //iv is lowest set bit!
+        unsigned iv_pos = iv.find_first();
         jay_without_kay_vee[v] = jay_without_kay_vee[v-1].subtract(iv); //remove iv from jay\kay
         kay_vee[v] = kay_vee[v-1].subtract(iv); //build kay_vee
         kay_vee_size[v] = kay_vee_size[v-1]-1; //kay_vee_size
         bee_vee[v] = RationalMatrix::Zero(kay_vee_size[v],kay_vee_size[v]);
 
         // Find the position of iv within kay_vee[v-1] by counting set bits before it
-        size_t index_position_to_remove = 0;
-        unsigned iv_pos = iv.find_first();
+        size_t pivot_pos = 0;
         for (unsigned i = 0; i < iv_pos; i++) {
-            if (kay_vee[v-1].test(i)) {
-                index_position_to_remove++;
-            }
+            if (kay_vee[v-1].test(i)) pivot_pos++;
         }
 
         if (conf_with_log && _logger) {
@@ -187,11 +185,11 @@ void fracessa::check_stability()
             _logger->info("kay_vee_size: {}", kay_vee_size[v]);
             _logger->info("jay_without_kay_vee: {}", jay_without_kay_vee[v].to_bitstring(dimension));
             _logger->info("iv: {}", iv.to_bitstring(dimension));
-            _logger->info("Real index (distance) to remove: {}", index_position_to_remove);
+            _logger->info("Real index (distance) to remove: {}", pivot_pos);
         }
 
-        if (bee_vee[v-1](index_position_to_remove,index_position_to_remove) <=0) {
-
+        rational pivot = bee_vee[v-1](pivot_pos, pivot_pos);
+        if (pivot <= rational(0)) {
             if (conf_with_log && _logger)
                 _logger->info("Reason: false_not_partial_copositive");
             _c.stability = "F_not_part_copos";
@@ -199,16 +197,35 @@ void fracessa::check_stability()
             return;
         }
 
-        for (size_t i = 0;i< kay_vee_size[v];i++) { //build matrix bee_vee[v]
-            for (size_t j = 0; j< kay_vee_size[v]; j++) {
-
-                size_t row_index_kv_minus_one = (i>=index_position_to_remove) ? i+1 : i;
-                size_t col_index_kv_minus_one = (j>=index_position_to_remove) ? j+1 : j;
-
-                bee_vee[v](i,j) = bee_vee[v-1](index_position_to_remove,index_position_to_remove) * bee_vee[v-1](row_index_kv_minus_one,col_index_kv_minus_one) -
-                    bee_vee[v-1](index_position_to_remove,row_index_kv_minus_one) * bee_vee[v-1](index_position_to_remove,col_index_kv_minus_one);
+        // Equation (20) in bomze 1992, p. 321: Apply rank-1 update, develops matrix by pivot
+        // Compute rank-1 product from original matrix (before scaling) - uses Eigen's optimized outer product
+        RationalMatrix rank1 = -bee_vee[v-1].col(pivot_pos) * bee_vee[v-1].row(pivot_pos);
+        // Scale matrix: pivot * B (element-wise to avoid Boost operator interception)
+        for (Eigen::Index i = 0; i < bee_vee[v-1].rows(); ++i) {
+            for (Eigen::Index j = 0; j < bee_vee[v-1].cols(); ++j) {
+                bee_vee[v-1](i, j) = bee_vee[v-1](i, j) * pivot;
             }
         }
+        // Add rank-1 product: pivot*B - col*row (uses Eigen's optimized addition)
+        bee_vee[v-1].noalias() += rank1;
+        // Remove pivot row/column using principal_submatrix, get bitset for this dimension, and remove pivot bitset from it
+        bitset64 keep_mask;
+        keep_mask.set_all(kay_vee_size[v-1]);
+        keep_mask.reset(pivot_pos);
+        matrix_ops::principal_submatrix(bee_vee[v-1], kay_vee_size[v-1], keep_mask, kay_vee_size[v], bee_vee[v]);
+
+
+
+        // for (size_t i = 0;i< kay_vee_size[v];i++) { //build matrix bee_vee[v]
+        //     for (size_t j = 0; j< kay_vee_size[v]; j++) {
+
+        //         size_t row_index_kv_minus_one = (i>=index_position_to_remove) ? i+1 : i;
+        //         size_t col_index_kv_minus_one = (j>=index_position_to_remove) ? j+1 : j;
+
+        //         bee_vee[v](i,j) = bee_vee[v-1](index_position_to_remove,index_position_to_remove) * bee_vee[v-1](row_index_kv_minus_one,col_index_kv_minus_one) -
+        //             bee_vee[v-1](index_position_to_remove,row_index_kv_minus_one) * bee_vee[v-1](index_position_to_remove,col_index_kv_minus_one);
+        //     }
+        // }
 
         if (conf_with_log && _logger) {
             _logger->info("bee_vee:\n{}", matrix_ops::to_string(bee_vee[v]));
@@ -219,7 +236,7 @@ void fracessa::check_stability()
     if (conf_with_log && _logger)
         _logger->info("Copositivity Check:");
 
-    if (matrix_ops::is_strictly_copositive(bee_vee[r])) {
+    if (isStrictlyCopositiveMemoized(bee_vee[r])) {
         if (conf_with_log && _logger)
             _logger->info("Reason: true_copositive");
         _c.stability = "T_copos";

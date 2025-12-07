@@ -11,79 +11,79 @@ struct bitset64_hash {
     }
 };
 
-// 0 = False, 1 = True, -1 = Unknown
-static std::unordered_map<bitset64, int8_t, bitset64_hash> memo;
+// Memoization cache: maps bitset64 mask to bool result
+static std::unordered_map<bitset64, bool, bitset64_hash> memo;
 
-inline bool checkRecursive(const Eigen::MatrixXd& A, const bitset64& mask, int n) {
+// Recursive Check (Hadeler Criterion) for Rationals
+inline bool checkRecursive(const RationalMatrix& A, const bitset64& mask) {
     // 1. Check Cache
     auto it = memo.find(mask);
-    if (it != memo.end() && it->second != -1) {
-        return it->second == 1;
+    if (it != memo.end()) {
+        return it->second;
     }
 
-    size_t current_dim = mask.count();
+    int current_dim = static_cast<int>(mask.count());
 
     // 2. Base Case: 1x1 Matrix
     if (current_dim == 1) {
         unsigned idx = mask.find_first();
-        bool result = A(static_cast<Eigen::Index>(idx), static_cast<Eigen::Index>(idx)) > 0;
-        memo[mask] = result ? 1 : 0;
+        // Check if diagonal element > 0 (Rational comparison)
+        bool result = A(static_cast<Eigen::Index>(idx), static_cast<Eigen::Index>(idx)) > rational(0);
+        memo[mask] = result;
         return result;
     }
 
     // 3. Recursive Step: Check all submatrices of size (current_dim - 1)
-    // We generate them by turning off one bit at a time from the current mask.
-    for (int i = 0; i < n; ++i) {
-        // If index i is in the current set
-        if (mask.test(i)) {
-            bitset64 sub_mask = mask;
-            sub_mask.reset(i); // Turn off bit i
-            if (!checkRecursive(A, sub_mask, n)) {
-                memo[mask] = 0;
-                return false;
-            }
-        }
+    // We iterate ONLY over the bits that are currently set to turn them off one by one
+    if (!mask.for_each_set_bit([&](unsigned i) {
+        bitset64 sub_mask = mask;
+        sub_mask.reset(i); // Turn off bit i representing row/col i
+        return checkRecursive(A, sub_mask); // Return false to stop early if check fails
+    })) {
+        memo[mask] = false; // Fail early
+        return false;
     }
 
-    // 4. If all submatrices are valid, check Determinant condition
-    // Construct the actual submatrix for this mask using principal_submatrix
-    Eigen::MatrixXd subMat;
-    matrix_ops::principal_submatrix(A, static_cast<size_t>(n), mask, current_dim, subMat);
+    // 4. Determinant / Adjugate Check
+    // If all proper principal submatrices are strictly copositive,
+    // A is strictly copositive UNLESS (det(A) <= 0 AND adj(A) > 0)
     
-    double det = subMat.determinant();
-    const double EPSILON = 1e-9;
+    RationalMatrix subMat;
+    // Use principal_submatrix which already uses optimized find_first()/find_next() iteration
+    matrix_ops::principal_submatrix(A, static_cast<size_t>(A.rows()), mask, static_cast<size_t>(current_dim), subMat);
 
-    if (det < -EPSILON) {
-        // Check Adjugate
-        Eigen::MatrixXd adj = subMat.inverse() * det; 
-        bool all_positive = true;
-        for (int r = 0; r < static_cast<int>(current_dim); ++r) {
-            for (int c = 0; c < static_cast<int>(current_dim); ++c) {
-                if (adj(r, c) <= EPSILON) {
-                    all_positive = false; 
-                    break;
-                }
-            }
-            if (!all_positive) break;
-        }
+    // Use matrix_ops::determinant
+    rational det = matrix_ops::determinant(subMat);
 
-        if (all_positive) {
-            memo[mask] = 0; // Not strict copositive
+    if (det <= rational(0)) {
+        // Compute Adjugate
+        RationalMatrix adj = matrix_ops::adjugate(subMat);
+
+        // Check if Adjugate is Strictly Positive (> 0)
+        // Use matrix_ops::all_entries_greater_zero
+        if (matrix_ops::all_entries_greater_zero(adj)) {
+            memo[mask] = false; // Violates Hadeler condition
             return false;
         }
     }
 
     // Passed all checks
-    memo[mask] = 1;
+    memo[mask] = true;
     return true;
 }
 
-inline bool isStrictlyCopositiveMemoized(const Eigen::MatrixXd& A) {
-    int n = A.rows();
-    // Clear memo table for new computation
+// Main Entry Point
+inline bool isStrictlyCopositiveMemoized(const RationalMatrix& A) {
+    int n = static_cast<int>(A.rows());
+    // Clear cache for new computation
     memo.clear();
-    // Start recursion with all bits set (111...1) representing the full matrix
+    
+    // Reserve map size to avoid reallocations (heuristic: worst case 2^n subsets)
+    memo.reserve(1 << n);
+    
+    // Create mask with lower n bits set
     bitset64 full_mask;
-    full_mask.set_all(n);
-    return checkRecursive(A, full_mask, n);
+    full_mask.set_all(static_cast<unsigned>(n));
+
+    return checkRecursive(A, full_mask);
 }

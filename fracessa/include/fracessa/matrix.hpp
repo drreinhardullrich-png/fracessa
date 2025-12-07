@@ -92,9 +92,11 @@ inline std::string to_string(const MatrixType& A)
 {
   std::ostringstream oss;
   for (Eigen::Index i=0; i<static_cast<Eigen::Index>(A.rows()); i++) {
+    oss << "\t\t\t";  // Add tabs before each line
     for (Eigen::Index j=0; j<static_cast<Eigen::Index>(A.cols()); j++)
       oss << A(i,j) << ",";
-    oss << std::endl;
+    if (i < static_cast<Eigen::Index>(A.rows()) - 1)
+      oss << std::endl;
   }
   return oss.str();
 }
@@ -201,8 +203,9 @@ inline void get_kkt_rhs(size_t support_size, RationalVector& b)
 }
 
 // Extract principal submatrix from matrix using bitset64 mask (reuse version for optimization)
+// Optimized: only iterates over SET bits using find_first()/find_next() for better performance
 template<typename MatrixType>
-inline void principal_submatrix(const MatrixType& A, size_t dimension, const bitset64& support, size_t support_size, MatrixType& submatrix)
+inline void principal_submatrix(const MatrixType& A, size_t /*dimension*/, const bitset64& support, size_t support_size, MatrixType& submatrix)
 {
   // Only resize if needed, and matrix is square, so check for rows is sufficient
   if (submatrix.rows() != static_cast<Eigen::Index>(support_size)) {
@@ -211,19 +214,18 @@ inline void principal_submatrix(const MatrixType& A, size_t dimension, const bit
     submatrix.setZero();
   }
   
+  // Only iterate over SET bits for efficiency
   size_t row = 0;
-  for (size_t i = 0; i < dimension; ++i) {
-    if (support.test(i)) {
-      size_t col = 0;
-      for (size_t j = 0; j < dimension; ++j) {
-        if (support.test(j)) {
-          submatrix(row, col) = A(static_cast<Eigen::Index>(i), static_cast<Eigen::Index>(j));
-          ++col;
-        }
-      }
-      ++row;
-    }
-  }
+  support.for_each_set_bit([&](unsigned i) {
+    size_t col = 0;
+    support.for_each_set_bit([&](unsigned j) {
+      submatrix(static_cast<Eigen::Index>(row), static_cast<Eigen::Index>(col)) = A(static_cast<Eigen::Index>(i), static_cast<Eigen::Index>(j));
+      ++col;
+      return true; // Continue iteration
+    });
+    ++row;
+    return true; // Continue iteration
+  });
 }
 
 
@@ -434,35 +436,35 @@ inline bool all_entries_greater_zero(const RationalMatrix& A)
   return true;
 }
 
-// Check if matrix is copositive
-inline bool is_strictly_copositive(const RationalMatrix& A)
-{
-  bool result = true;
-  size_t n_rows = static_cast<size_t>(A.rows());
-  bitset64::iterate_all_supports(n_rows, [&](const bitset64& support, unsigned) {
-    if (!result) return;  // Early exit optimization
-    size_t n = support.count();
-    RationalMatrix subA = RationalMatrix::Zero(n, n);
+// // Check if matrix is copositive
+// inline bool is_strictly_copositive(const RationalMatrix& A)
+// {
+//   bool result = true;
+//   size_t n_rows = static_cast<size_t>(A.rows());
+//   bitset64::iterate_all_supports(n_rows, [&](const bitset64& support) {
+//     if (!result) return;  // Early exit optimization
+//     size_t n = support.count();
+//     RationalMatrix subA = RationalMatrix::Zero(n, n);
 
-    size_t row = 0;
-    size_t column = 0;
-    for (size_t i=0; i<n_rows; i++) {
-      if (support.test(i)) {
-        column = 0;
-        for (size_t j=0; j<static_cast<size_t>(A.cols()); j++)
-          if (support.test(j)) {
-            subA(row,column) = A(static_cast<Eigen::Index>(i), static_cast<Eigen::Index>(j));
-            column++;
-          }
-        row++;
-      }
-    }
-    if (determinant(subA) <= 0 && all_entries_greater_zero(adjugate(subA))) {
-      result = false;  // Found counterexample
-    }
-  });
-  return result;
-}
+//     size_t row = 0;
+//     size_t column = 0;
+//     for (size_t i=0; i<n_rows; i++) {
+//       if (support.test(i)) {
+//         column = 0;
+//         for (size_t j=0; j<static_cast<size_t>(A.cols()); j++)
+//           if (support.test(j)) {
+//             subA(row,column) = A(static_cast<Eigen::Index>(i), static_cast<Eigen::Index>(j));
+//             column++;
+//           }
+//         row++;
+//       }
+//     }
+//     if (determinant(subA) <= 0 && all_entries_greater_zero(adjugate(subA))) {
+//       result = false;  // Found counterexample
+//     }
+//   });
+//   return result;
+// }
 
 } // namespace matrix_ops
 

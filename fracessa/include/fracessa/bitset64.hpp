@@ -2,7 +2,6 @@
 #pragma once
 #include <cstdint>
 #include <cstddef>
-#include <functional>
 #include <string>
 
 // Force-inline hint
@@ -16,14 +15,6 @@
 #ifdef _MSC_VER
 #include <intrin.h>
 #endif
-
-// Very small utility for safe shift: defined behavior for shift >= 64 -> returns 0
-FORCE_INLINE constexpr uint64_t shl64_safe(uint64_t x, unsigned s) noexcept {
-    return (s >= 64) ? 0ULL : (x << s);
-}
-FORCE_INLINE constexpr uint64_t shr64_safe(uint64_t x, unsigned s) noexcept {
-    return (s >= 64) ? 0ULL : (x >> s);
-}
 
 // Portable popcount wrapper
 FORCE_INLINE unsigned popcount64(uint64_t x) noexcept {
@@ -47,12 +38,6 @@ FORCE_INLINE unsigned ctz64(uint64_t x) noexcept {
 #endif
 }
 
-// Helper to compute mask for nbits (low nbits set)
-FORCE_INLINE constexpr uint64_t compute_mask(unsigned nbits) noexcept {
-    if (nbits >= 64) return ~0ULL;
-    if (nbits == 0) return 0ULL;
-    return (1ULL << nbits) - 1ULL;
-}
 
 /// Ultra-optimized bitset for n <= 64.
 /// - stores only uint64_t bits (8 bytes, same as uint64_t)
@@ -71,29 +56,32 @@ public:
     FORCE_INLINE bitset64& operator=(const bitset64& o) noexcept = default;
     FORCE_INLINE bitset64& operator=(bitset64&& o) noexcept = default;
 
-    // construct from raw mask (low bits used). nbits must be <=64.
-    static FORCE_INLINE bitset64 from_mask(unsigned nbits, uint64_t mask) noexcept {
-        return bitset64(mask & compute_mask(nbits));
-    }
-
     // Helper function to iterate through all non-empty support sets
     // Calls callback for each bitset64 from 1 to (1<<nbits)-1
-    // Optimized: reuses a single bitset64 object, updating it with set_mask()
     template<typename F>
     static FORCE_INLINE void iterate_all_supports(unsigned nbits, F&& callback) {
-        bitset64 support(0ULL);
-        uint64_t mask = compute_mask(nbits);
         for (uint64_t bits = 1ull; bits < (1ull << nbits); bits++) {
-            support.bits_ = bits & mask;
-            callback(support, nbits);  // Pass nbits to callback
+            callback(bitset64(bits));
         }
+    }
+
+    // Iterate over all set bits, calling callback with each bit position
+    // Returns false if callback returns false (early exit), true if all iterations complete
+    template<typename F>
+    FORCE_INLINE bool for_each_set_bit(F&& callback) const noexcept {
+        for (unsigned i = find_first(); i < 64; i = find_next(i)) {
+            if (!callback(i)) {
+                return false; // Early exit
+            }
+        }
+        return true; // All iterations completed
     }
 
     // --------------------------
     // clear / set all
     // --------------------------
-    FORCE_INLINE void clear() noexcept { bits_ = 0ULL; }
-    FORCE_INLINE void set_all(unsigned nbits) noexcept { bits_ = compute_mask(nbits); }
+    //FORCE_INLINE void clear() noexcept { bits_ = 0ULL; }
+    FORCE_INLINE void set_all(unsigned nbits) noexcept { bits_ = (1ULL << nbits) - 1ULL; } //careful with nbits == 0
 
     // --------------------------
     // single-bit ops (NO bounds checks, NO nbits needed)
@@ -104,22 +92,11 @@ public:
     FORCE_INLINE void reset(unsigned pos) noexcept {
         bits_ &= ~(1ULL << pos);
     }
-    FORCE_INLINE void flip(unsigned pos) noexcept {
-        bits_ ^= (1ULL << pos);
-    }
     FORCE_INLINE bool test(unsigned pos) const noexcept {
         return (bits_ >> pos) & 1ULL;
     }
 
     // --------------------------
-    // bulk ops (in-place, NO nbits needed)
-    // --------------------------
-    FORCE_INLINE void inplace_and(const bitset64 &o) noexcept { bits_ &= o.bits_; }
-    FORCE_INLINE void inplace_or (const bitset64 &o) noexcept { bits_ |= o.bits_; }
-    FORCE_INLINE void inplace_xor(const bitset64 &o) noexcept { bits_ ^= o.bits_; }
-    // this := this \ o
-    FORCE_INLINE void inplace_subtract(const bitset64 &o) noexcept { bits_ &= ~o.bits_; }
-
     // Return this \ o (set difference)
     FORCE_INLINE bitset64 subtract(const bitset64 &o) const noexcept {
         return bitset64(bits_ & ~o.bits_);
@@ -134,20 +111,29 @@ public:
         return result;
     }
 
-    // Get smallest representation by circular rotation (for circular symmetric matrices)
+    // Get smallest representation by circular rotation (for circular symmetric matrices) with bitmask of size nbits
     FORCE_INLINE bitset64 smallest_representation(unsigned nbits) const noexcept {
         if (nbits == 0 || bits_ == 0ULL) return *this;
-        uint64_t mask = compute_mask(nbits);
+        uint64_t mask = (1ULL << nbits) - 1ULL;
         uint64_t min_val = bits_ & mask;
-        uint64_t current = bits_ & mask;
+        
+        // Early exit: 0 is absolute minimum
+        if (min_val == 0ULL) return bitset64(0ULL);
+        
+        uint64_t current = min_val;
         for (unsigned i = 1; i < nbits; i++) {
             // Circular rotate right by 1
-            uint64_t low = current & mask;
-            uint64_t lo = shl64_safe(low, nbits - 1);
-            uint64_t hi = shr64_safe(low, 1);
+            uint64_t lo = current << (nbits - 1);
+            uint64_t hi = current >> 1;
             current = (hi | lo) & mask;
+            
+            // Early exit: found absolute minimum (0 is smallest possible)
+            if (current == 0ULL) return bitset64(0ULL);
+            
             if (current < min_val) {
                 min_val = current;
+                // Early exit optimization: if we found a new minimum that's very small,
+                // continue but the 0 check above will catch the absolute minimum
             }
         }
         return bitset64(min_val);
@@ -161,14 +147,10 @@ public:
     FORCE_INLINE bitset64 operator^(const bitset64 &o) const noexcept { return bitset64(bits_ ^ o.bits_); }
     // Note: operator~() without nbits returns all bits set - use with care
     FORCE_INLINE bitset64 operator~() const noexcept { return bitset64(~bits_); }
-    // Complement with masking
-    FORCE_INLINE bitset64 complement(unsigned nbits) const noexcept { return bitset64((~bits_) & compute_mask(nbits)); }
 
     // --------------------------
     // tests (NO nbits needed)
     // --------------------------
-    FORCE_INLINE bool any() const noexcept { return bits_ != 0ULL; }
-    FORCE_INLINE bool none() const noexcept { return bits_ == 0ULL; }
     // this ⊆ o  <=> (this & ~o) == 0
     FORCE_INLINE bool is_subset_of(const bitset64 &o) const noexcept { return (bits_ & ~o.bits_) == 0ULL; }
     FORCE_INLINE bool operator==(const bitset64 &o) const noexcept { return bits_ == o.bits_; }
@@ -182,91 +164,38 @@ public:
     // --------------------------
     // find-first and next (NO nbits needed for find_first)
     // --------------------------
-    // returns 64 if none (caller must check against nbits)
+    // caller must check against nbits, be careful with nbits == 0
     FORCE_INLINE unsigned find_first() const noexcept {
-        if (bits_ == 0ULL) return 64;
         return ctz64(bits_);
     }
 
-    // find next bit after pos; returns 64 if none
+    // find next bit after pos
     FORCE_INLINE unsigned find_next(unsigned pos) const noexcept {
         unsigned p = pos + 1;
-        if (p >= 64) return 64;
         uint64_t w = bits_ & (~0ULL << p); // zero below p
         if (w) return ctz64(w);
-        return 64;
+        return 64; // no more bits found
     }
 
-    // iterate set bits: f(unsigned idx)
-    template<typename F>
-    FORCE_INLINE void for_each_set(F &&f) const {
-        uint64_t v = bits_;
-        while (v) {
-            unsigned tz = ctz64(v);
-            f(tz);
-            v &= v - 1; // clear lowest set
-        }
-    }
-
-    // --------------------------
-    // shifts (need nbits for masking)
-    // --------------------------
-    // logical left shift by s (fills low bits with 0)
-    FORCE_INLINE bitset64 shl(unsigned s, unsigned nbits) const noexcept {
-        if (s == 0 || bits_ == 0ULL) return *this;
-        if (s >= nbits) return bitset64(0ULL);
-        uint64_t mask = compute_mask(nbits);
-        uint64_t r = (shl64_safe(bits_, s) & mask);
-        return bitset64(r);
-    }
-
-    // logical right shift by s (fills high bits with 0)
-    FORCE_INLINE bitset64 shr(unsigned s, unsigned nbits) const noexcept {
-        if (s == 0 || bits_ == 0ULL) return *this;
-        if (s >= nbits) return bitset64(0ULL);
-        uint64_t mask = compute_mask(nbits);
-        uint64_t r = (shr64_safe(bits_, s) & mask);
-        return bitset64(r);
-    }
-
-    // circular rotate right by s (0 <= s < nbits)
-    FORCE_INLINE bitset64 rot_r(unsigned s, unsigned nbits) const noexcept {
-        if (nbits == 0) return *this;
-        s %= nbits;
-        if (s == 0) return *this;
-        uint64_t mask = compute_mask(nbits);
+    // circular rotate right by exactly 1 bit (in place) for a bitmask of size nbits!
+    FORCE_INLINE void rot_one_right(unsigned nbits) noexcept {
+        uint64_t mask = (1ULL << nbits) - 1ULL;
         uint64_t low = bits_ & mask;
-        uint64_t lo = shl64_safe(low, nbits - s);
-        uint64_t hi = shr64_safe(low, s);
-        return bitset64((hi | lo) & mask);
+        uint64_t lo = low << (nbits - 1);
+        uint64_t hi = low >> 1;
+        bits_ = (hi | lo) & mask;
     }
-
-    // circular rotate left by s
-    FORCE_INLINE bitset64 rot_l(unsigned s, unsigned nbits) const noexcept {
-        if (nbits == 0) return *this;
-        s %= nbits;
-        if (s == 0) return *this;
-        return rot_r(nbits - s, nbits);
-    }
-
-    // convenience: return the underlying mask (low bits contain data)
-    FORCE_INLINE uint64_t to_uint64() const noexcept { return bits_; }
-    FORCE_INLINE uint64_t to_uint64(unsigned nbits) const noexcept { return bits_ & compute_mask(nbits); }
     
     // Convert to string representation (decimal representation of uint64)
     inline std::string to_string() const noexcept {
         return std::to_string(bits_);
     }
 
-    // set from a raw mask (low bits used)
-    FORCE_INLINE void set_mask(uint64_t mask, unsigned nbits) noexcept { bits_ = mask & compute_mask(nbits); }
-
     // Convert to bitstring representation (MSB first, like std::bitset::to_string())
     // Only outputs bits 0 to dimension-1 (rightmost dimension bits)
     // Example: dimension=5, bits 0,3,4 set -> "10011"
     inline std::string to_bitstring(unsigned dimension) const noexcept {
         if (dimension == 0) return "";
-        if (dimension > 64) dimension = 64;
         std::string result;
         result.reserve(dimension);
         // Output from highest bit (dimension-1) to lowest bit (0)
@@ -288,6 +217,6 @@ public:
         return (std::size_t)x;
     }
 
-    // Make bits_ accessible for iterate_all_supports optimization
+private:
     uint64_t bits_;
 };
