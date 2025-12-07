@@ -18,23 +18,28 @@ int main(int argc, char *argv[])
 
     program.add_argument("-c", "--candidates")
         .help("include the found candidates for ESS/solutions in the output")
-        .flag();
+        .implicit_value(true)
+        .default_value(false);
 
     program.add_argument("-l", "--log")
         .help("output a detailed log file named 'fracessa.log' in the directory of the program, for diagnostic of learning purposes only")
-        .flag();
+        .implicit_value(true)
+        .default_value(false);
 
     program.add_argument("-e", "--exact")
         .help("only uses rational numbers, for matrices with extreme differences in the input, is much much slower!")
-        .flag();
+        .implicit_value(true)
+        .default_value(false);
 
     program.add_argument("-f", "--fullsupport")
         .help("searches the full support directly after searching support size one. Enable if you expect the matrix to have exactly one ess in the interior of the simplex!")
-        .flag();
+        .implicit_value(true)
+        .default_value(false);
 
     program.add_argument("-t", "--timing")
         .help("output the computation time in seconds on a new line after the ESS count")
-        .flag();
+        .implicit_value(true)
+        .default_value(false);
 
     program.add_argument("-m", "--matrix-id")
         .help("optional matrix ID to write in the log file")

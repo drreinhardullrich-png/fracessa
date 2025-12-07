@@ -103,13 +103,133 @@ else()
     add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
-# Use local Boost headers directly (from git submodule)
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/boost")
-    message(STATUS "Using local Boost 1.89.0 headers (from git submodule)")
-    set(BOOST_LOCAL_FOUND TRUE)
-else()
-    message(FATAL_ERROR "Local Boost headers not found!")
-endif()
+# Use FetchContent to download dependencies
+include(FetchContent)
+
+# Fetch Eigen
+FetchContent_Declare(
+    Eigen3
+    GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
+    GIT_TAG        3.4.0
+)
+
+# Fetch spdlog
+FetchContent_Declare(
+    spdlog
+    GIT_REPOSITORY https://github.com/gabime/spdlog.git
+    GIT_TAG        v1.13.0
+)
+
+# Fetch argparse
+FetchContent_Declare(
+    argparse
+    GIT_REPOSITORY https://github.com/p-ranav/argparse.git
+    GIT_TAG        v2.9
+)
+
+# Fetch Boost libraries (headers-only, individual repos for smaller downloads)
+# Core dependencies first
+FetchContent_Declare(
+    boost_core
+    GIT_REPOSITORY https://github.com/boostorg/core.git
+    GIT_TAG        boost-1.89.0
+    GIT_SHALLOW    TRUE
+)
+
+FetchContent_Declare(
+    boost_config
+    GIT_REPOSITORY https://github.com/boostorg/config.git
+    GIT_TAG        boost-1.89.0
+    GIT_SHALLOW    TRUE
+)
+
+FetchContent_Declare(
+    boost_predef
+    GIT_REPOSITORY https://github.com/boostorg/predef.git
+    GIT_TAG        boost-1.89.0
+    GIT_SHALLOW    TRUE
+)
+
+FetchContent_Declare(
+    boost_assert
+    GIT_REPOSITORY https://github.com/boostorg/assert.git
+    GIT_TAG        boost-1.89.0
+    GIT_SHALLOW    TRUE
+)
+
+FetchContent_Declare(
+    boost_static_assert
+    GIT_REPOSITORY https://github.com/boostorg/static_assert.git
+    GIT_TAG        boost-1.89.0
+    GIT_SHALLOW    TRUE
+)
+
+FetchContent_Declare(
+    boost_throw_exception
+    GIT_REPOSITORY https://github.com/boostorg/throw_exception.git
+    GIT_TAG        boost-1.89.0
+    GIT_SHALLOW    TRUE
+)
+
+FetchContent_Declare(
+    boost_type_traits
+    GIT_REPOSITORY https://github.com/boostorg/type_traits.git
+    GIT_TAG        boost-1.89.0
+    GIT_SHALLOW    TRUE
+)
+
+# multiprecision
+FetchContent_Declare(
+    boost_multiprecision
+    GIT_REPOSITORY https://github.com/boostorg/multiprecision.git
+    GIT_TAG        boost-1.89.0
+    GIT_SHALLOW    TRUE
+)
+
+# math
+FetchContent_Declare(
+    boost_math
+    GIT_REPOSITORY https://github.com/boostorg/math.git
+    GIT_TAG        boost-1.89.0
+    GIT_SHALLOW    TRUE
+)
+
+# integer
+FetchContent_Declare(
+    boost_integer
+    GIT_REPOSITORY https://github.com/boostorg/integer.git
+    GIT_TAG        boost-1.89.0
+    GIT_SHALLOW    TRUE
+)
+
+# algorithm
+FetchContent_Declare(
+    boost_algorithm
+    GIT_REPOSITORY https://github.com/boostorg/algorithm.git
+    GIT_TAG        boost-1.89.0
+    GIT_SHALLOW    TRUE
+)
+
+# Make all dependencies available (core dependencies first)
+FetchContent_MakeAvailable(
+    Eigen3 
+    spdlog 
+    argparse 
+    boost_config
+    boost_predef
+    boost_assert
+    boost_static_assert
+    boost_throw_exception
+    boost_type_traits
+    boost_core
+    boost_multiprecision 
+    boost_math 
+    boost_integer 
+    boost_algorithm
+)
+
+message(STATUS "Using Boost 1.89.0 headers (from FetchContent)")
+set(BOOST_LOCAL_FOUND TRUE)
 
 # Option to use GMP backend (faster) or cpp_rational backend (no dependencies)
 # Default: ON if GMP is found, OFF otherwise
@@ -188,10 +308,21 @@ target_include_directories(fracessa_lib
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/fracessa>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third_party/argparse/include>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third_party/boost>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third_party/spdlog/include>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third_party/eigen>
+        $<BUILD_INTERFACE:${argparse_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${spdlog_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${Eigen3_SOURCE_DIR}>
+        # Boost libraries (individual repos, core dependencies first)
+        $<BUILD_INTERFACE:${boost_config_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${boost_predef_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${boost_assert_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${boost_static_assert_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${boost_throw_exception_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${boost_type_traits_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${boost_core_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${boost_multiprecision_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${boost_math_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${boost_integer_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${boost_algorithm_SOURCE_DIR}/include>
     PRIVATE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
 )
@@ -212,7 +343,7 @@ if(UNIX AND NOT APPLE)
         src/main.cpp
     )
 
-    target_include_directories(fracessa PRIVATE third_party/argparse/include)
+    target_include_directories(fracessa PRIVATE ${argparse_SOURCE_DIR}/include)
     target_link_libraries(fracessa PRIVATE fracessa_lib)
 
     # Install targets
@@ -231,7 +362,7 @@ elseif(WIN32 OR MSVC OR MSYS OR MINGW)
         src/main.cpp
     )
 
-    target_include_directories(fracessa PRIVATE third_party/argparse/include)
+    target_include_directories(fracessa PRIVATE ${argparse_SOURCE_DIR}/include)
     target_link_libraries(fracessa PRIVATE fracessa_lib)
 
     # Install targets

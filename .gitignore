@@ -70,7 +70,11 @@ coverage.xml
 zzz_altes_zeug.tar.gz
 old_code_backup.tar.gz
 
-# Third-party dependencies are now git submodules (not ignored)
+# CMake FetchContent downloads
+_deps/
+build/_deps/
+
+# Third-party dependencies are now downloaded via FetchContent (not in repo)
 
 # Third-party archives
 *.tar.gz
