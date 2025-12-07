@@ -103,9 +103,9 @@ else()
     add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
-# Use local Boost headers directly
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/boost_1_89_0_linux")
-    message(STATUS "Using local Boost 1.89.0 headers")
+# Use local Boost headers directly (from git submodule)
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/boost")
+    message(STATUS "Using local Boost 1.89.0 headers (from git submodule)")
     set(BOOST_LOCAL_FOUND TRUE)
 else()
     message(FATAL_ERROR "Local Boost headers not found!")
@@ -189,7 +189,7 @@ target_include_directories(fracessa_lib
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/fracessa>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third_party/argparse/include>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third_party/boost_1_89_0_linux>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third_party/boost>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third_party/spdlog/include>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third_party/eigen>
     PRIVATE
