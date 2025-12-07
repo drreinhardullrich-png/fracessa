@@ -40,14 +40,10 @@ class Matrix:
         
         if self.dimension is None:
             # Auto-detect dimension
-            # Try circular symmetric first (floor(dimension/2) elements)
-            # For n elements, dimension could be 2*n (even) or 2*n+1 (odd)
-            # Try symmetric matrix (upper triangular: dimension*(dimension+1)/2 elements)
-            # Solve: n = d*(d+1)/2 => d² + d - 2n = 0 => d = (-1 + sqrt(1+8n))/2
-            import math
-            symmetric_dim = int((-1 + math.sqrt(1 + 8*n)) / 2)
-            if symmetric_dim * (symmetric_dim + 1) // 2 == n:
-                self.dimension = symmetric_dim
+            # Try to find square dimension (for general matrices)
+            dim = int(n ** 0.5)
+            if dim * dim == n:
+                self.dimension = dim
                 self.is_circular = False
             elif self.is_circular:
                 # For circular symmetric matrices, we need dimension to be provided
@@ -63,10 +59,10 @@ class Matrix:
                 if n != expected_elements:
                     raise ValueError(f"Circular symmetric matrix with dimension {self.dimension} should have {expected_elements} elements, but got {n}")
             else:
-                # Symmetric matrix: should have dimension*(dimension+1)/2 elements (upper triangular)
+                # General matrix: should have n*(n+1)/2 elements (upper triangular format)
                 expected_elements = self.dimension * (self.dimension + 1) // 2
                 if n != expected_elements:
-                    raise ValueError(f"Symmetric matrix with dimension {self.dimension} should have {expected_elements} elements (upper triangular), but got {n}")
+                    raise ValueError(f"General matrix with dimension {self.dimension} should have {expected_elements} elements (upper triangular), but got {n}")
 
     def to_cli_string(self) -> str:
         """Convert to command-line format for fracessa executable."""
@@ -163,9 +159,7 @@ class Fracessa:
             script_dir = Path(__file__).parent.parent
             possible_paths = [
                 script_dir / "fracessa" / "build" / "fracessa",
-                script_dir / "build" / "fracessa",
                 Path("./fracessa/build/fracessa"),
-                Path("./build/fracessa")
             ]
 
             self.executable_path = None
@@ -225,11 +219,12 @@ class Fracessa:
             cmd.append("-f")
         if enable_logging:
             cmd.append("-l")
+        # Always use -t flag to get timing from executable
+        cmd.append("-t")
         cmd.append(cli_string)
 
         try:
             # Run command with timeout (0.0 means no timeout)
-            start_time = time.time()
             subprocess_timeout = None if timeout == 0.0 else timeout
             result = subprocess.run(
                 cmd,
@@ -237,10 +232,10 @@ class Fracessa:
                 text=True,
                 timeout=subprocess_timeout
             )
-            end_time = time.time()
-            computation_time = end_time - start_time
 
             if result.returncode != 0:
+                # Fallback timing if command failed
+                computation_time = 0.0
                 return ESSResult(
                     success=False,
                     error=f"Command failed with return code {result.returncode}: {result.stderr}",
@@ -253,7 +248,7 @@ class Fracessa:
                 return ESSResult(
                     success=False,
                     error="No output from executable",
-                    computation_time=computation_time
+                    computation_time=0.0
                 )
 
             try:
@@ -262,33 +257,43 @@ class Fracessa:
                 return ESSResult(
                     success=False,
                     error=f"Could not parse ESS count from: {lines[0]}",
-                    computation_time=computation_time
+                    computation_time=0.0
                 )
 
-            candidates = []
-            if include_candidates and len(lines) > 1:
-                if len(lines) > 1:
-                    header = lines[1]  # Header line
-                    candidate_lines = lines[2:]  # Candidate data lines
+            # Parse timing from second line (when -t flag is used)
+            computation_time = 0.0
+            if len(lines) > 1:
+                try:
+                    computation_time = float(lines[1].strip())
+                except (ValueError, IndexError):
+                    # If timing line is missing or invalid, use 0.0
+                    computation_time = 0.0
 
-                    for line in candidate_lines:
-                        if line.strip():
-                            parts = line.split(';')
-                            if len(parts) >= 11:
-                                candidate_data = {
-                                    'candidate_id': int(parts[0]) if parts[0] else 0,
-                                    'vector': parts[1].split(',') if parts[1] else [],
-                                    'support': int(parts[2]) if parts[2] else 0,
-                                    'support_size': int(parts[3]) if parts[3] else 0,
-                                    'extended_support': int(parts[4]) if parts[4] else 0,
-                                    'extended_support_size': int(parts[5]) if parts[5] else 0,
-                                    'shift_reference': int(parts[6]) if parts[6] else 0,
-                                    'is_ess': parts[7].lower() == '1' if parts[7] else False,
-                                    'reason_ess': parts[8] if len(parts) > 8 else '',
-                                    'payoff': parts[9] if len(parts) > 9 else '0',
-                                    'payoff_double': float(parts[10]) if len(parts) > 10 and parts[10] else 0.0
-                                }
-                                candidates.append(Candidate(candidate_data))
+            candidates = []
+            # When -t flag is used, timing is on line 1, so candidates start at line 2
+            candidate_start_line = 2 if len(lines) > 1 else 1
+            if include_candidates and len(lines) > candidate_start_line:
+                header = lines[candidate_start_line]  # Header line
+                candidate_lines = lines[candidate_start_line + 1:]  # Candidate data lines
+
+                for line in candidate_lines:
+                    if line.strip():
+                        parts = line.split(';')
+                        if len(parts) >= 11:
+                            candidate_data = {
+                                'candidate_id': int(parts[0]) if parts[0] else 0,
+                                'vector': parts[1].split(',') if parts[1] else [],
+                                'support': int(parts[2]) if parts[2] else 0,
+                                'support_size': int(parts[3]) if parts[3] else 0,
+                                'extended_support': int(parts[4]) if parts[4] else 0,
+                                'extended_support_size': int(parts[5]) if parts[5] else 0,
+                                'shift_reference': int(parts[6]) if parts[6] else 0,
+                                'is_ess': parts[7].lower() == '1' if parts[7] else False,
+                                'reason_ess': parts[8] if len(parts) > 8 else '',
+                                'payoff': parts[9] if len(parts) > 9 else '0',
+                                'payoff_double': float(parts[10]) if len(parts) > 10 and parts[10] else 0.0
+                            }
+                            candidates.append(Candidate(candidate_data))
 
             return ESSResult(
                 ess_count=ess_count,

@@ -121,8 +121,8 @@ public:
     FORCE_INLINE void inplace_subtract(const bitset64 &o) noexcept { bits_ &= ~o.bits_; }
 
     // Return this \ o (set difference)
-    FORCE_INLINE bitset64 subtract(const bitset64 &o, unsigned nbits) const noexcept {
-        return bitset64((bits_ & ~o.bits_) & compute_mask(nbits));
+    FORCE_INLINE bitset64 subtract(const bitset64 &o) const noexcept {
+        return bitset64(bits_ & ~o.bits_);
     }
 
     // Get the lowest set bit as a bitset64 (only that bit set)

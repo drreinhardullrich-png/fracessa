@@ -35,7 +35,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 # Enforce Release build type after project() is called
-if(NOT CMAKE_BUILD_TYPE STREQUAL "Release")
+if(CMAKE_BUILD_TYPE STREQUAL "")
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+    message(STATUS "Build type not specified, setting to Release")
+elseif(NOT CMAKE_BUILD_TYPE STREQUAL "Release")
     message(FATAL_ERROR "Only Release builds are supported. Current build type: ${CMAKE_BUILD_TYPE}")
 endif()
 
@@ -55,9 +58,9 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release" AND NOT MSVC)
         # Fall back to regular LTO for older compilers
         add_compile_options(-flto)
         add_link_options(-flto)
-        # Optimize LTO compilation speed: use single partition to reduce memory usage
-        add_compile_options(-flto-partition=none)
-        message(STATUS "Release build with maximum optimizations: -O3 -flto (using -flto-partition=none for faster compilation)")
+        # Note: -flto-partition=none is not supported by all compiler versions
+        # Removing it to avoid compilation errors
+        message(STATUS "Release build with maximum optimizations: -O3 -flto")
     endif()
     
     # Additional aggressive optimizations (optional - uncomment if needed)
@@ -133,6 +136,34 @@ target_include_directories(fracessa_lib
     PRIVATE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
 )
+
+# Test executable for positive definite check comparison
+add_executable(test_posdef
+    src/test_posdef.cpp
+)
+target_include_directories(test_posdef PRIVATE third_party/argparse/include)
+target_link_libraries(test_posdef PRIVATE fracessa_lib)
+
+# Test executable for Eigen LLT
+add_executable(test_eigen_llt
+    src/test_eigen_llt.cpp
+)
+target_include_directories(test_eigen_llt PRIVATE third_party/argparse/include)
+target_link_libraries(test_eigen_llt PRIVATE fracessa_lib)
+
+# Another test executable
+add_executable(another_test
+    src/another_test.cpp
+)
+target_include_directories(another_test PRIVATE third_party/argparse/include)
+target_link_libraries(another_test PRIVATE fracessa_lib)
+
+# Test executable for copositivity comparison
+add_executable(test_copositivity
+    src/test_copositivity.cpp
+)
+target_include_directories(test_copositivity PRIVATE third_party/argparse/include)
+target_link_libraries(test_copositivity PRIVATE fracessa_lib)
 
 # Platform-specific configuration
 if(UNIX AND NOT APPLE)

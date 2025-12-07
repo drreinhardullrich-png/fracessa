@@ -1,14 +1,14 @@
 {
   "metadata": {
-    "total_matrices": 34,
-    "successful": 34,
+    "total_matrices": 33,
+    "successful": 33,
     "failed": 0,
-    "timestamp": 1764895615.0606017,
-    "processing_time": 122.0712628364563,
-    "num_processes": 15,
+    "timestamp": 1765047936.5733082,
+    "processing_time": 25.97613525390625,
+    "num_processes": 1,
     "fracessa_settings": {
       "include_candidates": true,
-      "enable_logging": true,
+      "enable_logging": false,
       "exact_arithmetic": false,
       "full_support_search": false,
       "timeout": 1800.0
@@ -24,7 +24,7 @@
       "result": {
         "success": true,
         "ess_count": 1,
-        "timing": 0.005403995513916016
+        "timing": 0.00461268424987793
       }
     },
     {
@@ -36,7 +36,7 @@
       "result": {
         "success": true,
         "ess_count": 2,
-        "timing": 0.0065648555755615234
+        "timing": 0.005113840103149414
       }
     },
     {
@@ -48,7 +48,7 @@
       "result": {
         "success": true,
         "ess_count": 1,
-        "timing": 0.010497570037841797
+        "timing": 0.005814075469970703
       }
     },
     {
@@ -60,7 +60,7 @@
       "result": {
         "success": true,
         "ess_count": 1,
-        "timing": 0.007181644439697266
+        "timing": 0.004972934722900391
       }
     },
     {
@@ -72,7 +72,7 @@
       "result": {
         "success": true,
         "ess_count": 0,
-        "timing": 0.0068416595458984375
+        "timing": 0.004939079284667969
       }
     },
     {
@@ -84,7 +84,7 @@
       "result": {
         "success": true,
         "ess_count": 1,
-        "timing": 0.0069429874420166016
+        "timing": 0.006351470947265625
       }
     },
     {
@@ -96,7 +96,7 @@
       "result": {
         "success": true,
         "ess_count": 0,
-        "timing": 0.012346506118774414
+        "timing": 0.005338430404663086
       }
     },
     {
@@ -108,7 +108,7 @@
       "result": {
         "success": true,
         "ess_count": 5,
-        "timing": 0.011473655700683594
+        "timing": 0.005197286605834961
       }
     },
     {
@@ -120,7 +120,7 @@
       "result": {
         "success": true,
         "ess_count": 6,
-        "timing": 0.009711980819702148
+        "timing": 0.005997896194458008
       }
     },
     {
@@ -132,7 +132,7 @@
       "result": {
         "success": true,
         "ess_count": 9,
-        "timing": 0.009511470794677734
+        "timing": 0.0036301612854003906
       }
     },
     {
@@ -144,7 +144,7 @@
       "result": {
         "success": true,
         "ess_count": 14,
-        "timing": 0.016815662384033203
+        "timing": 0.0034999847412109375
       }
     },
     {
@@ -156,7 +156,7 @@
       "result": {
         "success": true,
         "ess_count": 14,
-        "timing": 0.007712602615356445
+        "timing": 0.006158590316772461
       }
     },
     {
@@ -168,7 +168,7 @@
       "result": {
         "success": true,
         "ess_count": 20,
-        "timing": 0.023259401321411133
+        "timing": 0.008544683456420898
       }
     },
     {
@@ -180,7 +180,7 @@
       "result": {
         "success": true,
         "ess_count": 30,
-        "timing": 0.014028787612915039
+        "timing": 0.006050825119018555
       }
     },
     {
@@ -192,7 +192,7 @@
       "result": {
         "success": true,
         "ess_count": 50,
-        "timing": 0.02804875373840332
+        "timing": 0.014043092727661133
       }
     },
     {
@@ -204,7 +204,7 @@
       "result": {
         "success": true,
         "ess_count": 66,
-        "timing": 0.013655662536621094
+        "timing": 0.008394718170166016
       }
     },
     {
@@ -212,11 +212,11 @@
       "dimension": 11,
       "number_ess_expected": 55,
       "is_cs": true,
-      "matrix": "15,1/100,14,11/10,76/10",
+      "matrix": "15,1/100,14,11/10,38/5",
       "result": {
         "success": true,
         "ess_count": 55,
-        "timing": 0.012512922286987305
+        "timing": 0.006857633590698242
       }
     },
     {
@@ -228,7 +228,7 @@
       "result": {
         "success": true,
         "ess_count": 105,
-        "timing": 0.05201077461242676
+        "timing": 0.02194070816040039
       }
     },
     {
@@ -240,7 +240,7 @@
       "result": {
         "success": true,
         "ess_count": 12,
-        "timing": 0.042082786560058594
+        "timing": 0.02576160430908203
       }
     },
     {
@@ -252,7 +252,7 @@
       "result": {
         "success": true,
         "ess_count": 24,
-        "timing": 0.016196489334106445
+        "timing": 0.013827085494995117
       }
     },
     {
@@ -264,7 +264,7 @@
       "result": {
         "success": true,
         "ess_count": 105,
-        "timing": 0.03981161117553711
+        "timing": 0.024796485900878906
       }
     },
     {
@@ -276,7 +276,7 @@
       "result": {
         "success": true,
         "ess_count": 143,
-        "timing": 0.01970982551574707
+        "timing": 0.012320518493652344
       }
     },
     {
@@ -288,7 +288,7 @@
       "result": {
         "success": true,
         "ess_count": 224,
-        "timing": 0.04031777381896973
+        "timing": 0.01824045181274414
       }
     },
     {
@@ -300,7 +300,7 @@
       "result": {
         "success": true,
         "ess_count": 360,
-        "timing": 0.06972718238830566
+        "timing": 0.034420013427734375
       }
     },
     {
@@ -312,7 +312,7 @@
       "result": {
         "success": true,
         "ess_count": 512,
-        "timing": 0.2583439350128174
+        "timing": 0.1624755859375
       }
     },
     {
@@ -324,7 +324,7 @@
       "result": {
         "success": true,
         "ess_count": 493,
-        "timing": 0.12098169326782227
+        "timing": 0.05609774589538574
       }
     },
     {
@@ -336,7 +336,7 @@
       "result": {
         "success": true,
         "ess_count": 1152,
-        "timing": 0.41729092597961426
+        "timing": 0.25457119941711426
       }
     },
     {
@@ -348,7 +348,7 @@
       "result": {
         "success": true,
         "ess_count": 1444,
-        "timing": 0.21158528327941895
+        "timing": 0.10860610008239746
       }
     },
     {
@@ -360,7 +360,7 @@
       "result": {
         "success": true,
         "ess_count": 19,
-        "timing": 0.15991806983947754
+        "timing": 0.0892951488494873
       }
     },
     {
@@ -372,7 +372,7 @@
       "result": {
         "success": true,
         "ess_count": 2560,
-        "timing": 3.6819355487823486
+        "timing": 2.1201109886169434
       }
     },
     {
@@ -384,7 +384,7 @@
       "result": {
         "success": true,
         "ess_count": 4410,
-        "timing": 7.537462472915649
+        "timing": 4.7698681354522705
       }
     },
     {
@@ -396,7 +396,7 @@
       "result": {
         "success": true,
         "ess_count": 5632,
-        "timing": 23.781791925430298
+        "timing": 16.09011173248291
       }
     },
     {
@@ -408,19 +408,7 @@
       "result": {
         "success": true,
         "ess_count": 2507,
-        "timing": 2.6745316982269287
-      }
-    },
-    {
-      "id": 34,
-      "dimension": 24,
-      "number_ess_expected": 15120,
-      "is_cs": true,
-      "matrix": "15,15,7,15,15,7,15,7,7,15,15,7",
-      "result": {
-        "success": true,
-        "ess_count": 15120,
-        "timing": 121.60465383529663
+        "timing": 1.9254999160766602
       }
     }
   ]

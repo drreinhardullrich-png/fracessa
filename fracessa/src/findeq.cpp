@@ -2,7 +2,6 @@
 #include <fracessa/bitset64.hpp>
 #include <eigen_extensions/bareiss_lu.hpp>
 #include <eigen_extensions/bareiss_ldlt.hpp>
-#include <fracessa/helper.hpp>
 #include <Eigen/LU>
 #include <limits>
 
@@ -169,7 +168,6 @@ bool fracessa::find_candidate_double_optimized(DoubleMatrix& A_SS)
 {
     // Note: Principal submatrices of circulant matrices are NOT necessarily circulant,
     // so we cannot use FFT solver here. We always use LDLT for principal submatrices.
-    // FFT solver would only be applicable for the full circulant matrix, not submatrices.
     
     // Use LDLT decomposition to solve A_{S,S} * v = 1_k
     Eigen::LDLT<DoubleMatrix> ldlt(A_SS);
@@ -228,7 +226,7 @@ bool fracessa::find_candidate_double(DoubleMatrix& A, DoubleVector& b)
     double minPivot = diag.minCoeff();
     const double tol = std::numeric_limits<double>::epsilon();
    
-    if (minPivot < tol) { // use the smallest possible tolerance, in case of false positives they get eliminated by the rational check!
+    if (minPivot < tol) { // use the smallest possible tolerance, false positives will get detected by the rational check!
         return false; // Matrix is singular
     }    
     DoubleVector solution = lu.solve(b);

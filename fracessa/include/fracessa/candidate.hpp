@@ -1,7 +1,6 @@
 #ifndef CANDIDATE_H
 #define CANDIDATE_H
 
-#include <fracessa/helper.hpp>
 #include <fracessa/matrix.hpp>
 #include <fracessa/bitset64.hpp>
 

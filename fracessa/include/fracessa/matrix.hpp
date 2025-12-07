@@ -5,11 +5,14 @@
 #include <sstream>
 #include <cmath>
 
-#include <fracessa/helper.hpp>
+#include <fracessa/types.hpp>
 #include <fracessa/bitset64.hpp>
-#include <fracessa/rational_eigen.hpp>
+#include <eigen_extensions/rational_eigen.hpp>
 #include <Eigen/Dense>
 #include <eigen_extensions/bareiss_ldlt.hpp>
+#include <boost/math/special_functions/binomial.hpp>
+#include <boost/integer/common_factor.hpp>
+#include <boost/algorithm/string.hpp>
 
 // Type aliases for Eigen matrices and vectors
 using RationalMatrix = Eigen::Matrix<rational, Eigen::Dynamic, Eigen::Dynamic>;
@@ -422,7 +425,7 @@ inline RationalMatrix adjugate(const RationalMatrix& A)
 }
 
 // Check if all elements are greater than zero
-inline bool greater_zero(const RationalMatrix& A)
+inline bool all_entries_greater_zero(const RationalMatrix& A)
 {
   for (Eigen::Index i=0; i<static_cast<Eigen::Index>(A.rows()); i++)
     for (Eigen::Index j=0; j<static_cast<Eigen::Index>(A.cols()); j++)
@@ -454,7 +457,7 @@ inline bool is_strictly_copositive(const RationalMatrix& A)
         row++;
       }
     }
-    if (determinant(subA) <= 0 && greater_zero(adjugate(subA))) {
+    if (determinant(subA) <= 0 && all_entries_greater_zero(adjugate(subA))) {
       result = false;  // Found counterexample
     }
   });

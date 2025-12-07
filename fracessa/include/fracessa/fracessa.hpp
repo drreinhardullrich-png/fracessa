@@ -10,8 +10,10 @@
 #include <fracessa/matrix.hpp>
 #include <fracessa/candidate.hpp>
 #include <fracessa/bitset64.hpp>
-#include <fracessa/rational_eigen.hpp>
+#include <eigen_extensions/rational_eigen.hpp>
 
+// Named constants
+static constexpr size_t CANDIDATE_RESERVE_MULTIPLIER = 10;
 
 class fracessa
 {
