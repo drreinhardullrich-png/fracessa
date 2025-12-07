@@ -479,7 +479,7 @@ def main():
     # Paths
     script_dir = Path(__file__).resolve().parent
     project_root = script_dir.parent
-    matrices_file = script_dir / "test" / "verification_matrices.json"
+    matrices_file = script_dir / "verification" / "verification_matrices.json"
     
     # Generate timestamped output filenames in results folder
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -487,8 +487,8 @@ def main():
     results_dir.mkdir(exist_ok=True)
     results_file = results_dir / f"fracessa_verification_result_{timestamp}.json"
     candidates_file = results_dir / f"fracessa_verification_candidates_{timestamp}.csv"
-    baseline_candidates_file = script_dir / "test" / "fracessa_verification_candidates_baseline.csv"
-    baseline_results_file = script_dir / "test" / "fracessa_verification_result_baseline.json"
+    baseline_candidates_file = script_dir / "verification" / "baseline_candidates.csv"
+    baseline_results_file = script_dir / "verification" / "baseline_result.json"
 
     # Check if matrices file exists
     if not matrices_file.exists():

@@ -104,6 +104,8 @@ else()
 endif()
 
 # Use FetchContent to download dependencies
+# Set base directory to third_party so dependencies persist across cache clears
+set(FETCHCONTENT_BASE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party CACHE PATH "Directory for FetchContent downloads")
 include(FetchContent)
 
 # Fetch Eigen

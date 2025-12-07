@@ -1,0 +1,332 @@
+#include <iostream>
+#include <vector>
+#include <unordered_map>
+#include <cmath>
+#include <stdexcept>
+#include <Eigen/Dense>
+
+// =============================================================================
+// BITSET64 CLASS (Optimized for performance)
+// =============================================================================
+
+#include <cstdint>
+#include <cstddef>
+#include <string>
+
+#if defined(_MSC_VER)
+#  define FORCE_INLINE __forceinline
+#else
+#  define FORCE_INLINE __attribute__((always_inline)) inline
+#endif
+
+#ifdef _MSC_VER
+#include <intrin.h>
+#endif
+
+// Portable intrinsics wrappers
+FORCE_INLINE unsigned popcount64(uint64_t x) noexcept {
+#ifdef _MSC_VER
+    return (unsigned)_mm_popcnt_u64(x);
+#else
+    return (unsigned)__builtin_popcountll(x);
+#endif
+}
+
+FORCE_INLINE unsigned ctz64(uint64_t x) noexcept {
+#ifdef _MSC_VER
+    unsigned long index;
+    if (_BitScanForward64(&index, x)) return (unsigned)index;
+    return 64;
+#else
+    return (unsigned)__builtin_ctzll(x);
+#endif
+}
+
+class bitset64 {
+public:
+    uint64_t bits_;
+
+    FORCE_INLINE bitset64() noexcept : bits_(0ULL) {}
+    FORCE_INLINE bitset64(uint64_t bits) noexcept : bits_(bits) {}
+
+    // Tests & Ops
+    FORCE_INLINE void set(unsigned pos) noexcept { bits_ |= (1ULL << pos); }
+    FORCE_INLINE void reset(unsigned pos) noexcept { bits_ &= ~(1ULL << pos); }
+    FORCE_INLINE bool test(unsigned pos) const noexcept { return (bits_ >> pos) & 1ULL; }
+    FORCE_INLINE unsigned count() const noexcept { return popcount64(bits_); }
+    FORCE_INLINE void set_all(unsigned nbits) noexcept { 
+        bits_ = (nbits >= 64) ? ~0ULL : (1ULL << nbits) - 1ULL; 
+    }
+
+    // Iteration support
+    FORCE_INLINE unsigned find_first() const noexcept {
+        if (bits_ == 0ULL) return 64;
+        return ctz64(bits_);
+    }
+    FORCE_INLINE unsigned find_next(unsigned pos) const noexcept {
+        unsigned p = pos + 1;
+        if (p >= 64) return 64;
+        uint64_t w = bits_ & (~0ULL << p);
+        if (w) return ctz64(w);
+        return 64;
+    }
+
+    // Equality
+    FORCE_INLINE bool operator==(const bitset64 &o) const noexcept { return bits_ == o.bits_; }
+    
+    // Hash
+    FORCE_INLINE std::size_t hash() const noexcept {
+        uint64_t x = bits_;
+        x ^= x >> 33; x *= 0xff51afd7ed558ccdULL;
+        x ^= x >> 33; x *= 0xc4ceb9fe1a85ec53ULL;
+        x ^= x >> 33;
+        return (std::size_t)x;
+    }
+};
+
+// =============================================================================
+// ALGORITHM IMPLEMENTATION
+// =============================================================================
+
+// 1. Hash function for unordered_map
+struct bitset64_hash {
+    std::size_t operator()(const bitset64& bs) const noexcept {
+        return bs.hash();
+    }
+};
+
+// 2. Global Memoization Table
+// -1 = Unknown, 0 = False (Not Copositive), 1 = True (Strictly Copositive)
+static std::unordered_map<bitset64, int8_t, bitset64_hash> memo;
+
+// 3. Helper: Efficient Submatrix Extraction
+// Extracts A[I, I] where I is the set of indices in mask
+void extract_submatrix(const Eigen::MatrixXd& A, const bitset64& mask, int dim, Eigen::MatrixXd& sub) {
+    sub.resize(dim, dim);
+    
+    int sub_i = 0;
+    // Iterate rows based on set bits
+    for (unsigned i = mask.find_first(); i < 64; i = mask.find_next(i)) {
+        int sub_j = 0;
+        // Iterate cols based on set bits
+        for (unsigned j = mask.find_first(); j < 64; j = mask.find_next(j)) {
+            sub(sub_i, sub_j) = A(i, j);
+            sub_j++;
+        }
+        sub_i++;
+    }
+}
+
+// 4. Recursive Check (Hadeler Criterion)
+// A matrix is strictly copositive if:
+// 1. All principal submatrices are strictly copositive.
+// 2. NOT (det(A) < 0 AND adj(A) > 0)
+bool checkRecursive(const Eigen::MatrixXd& A, const bitset64& mask, int n) {
+    // Check Cache
+    auto it = memo.find(mask);
+    if (it != memo.end()) {
+        return it->second == 1;
+    }
+
+    int current_dim = static_cast<int>(mask.count());
+
+    // Base Case: 1x1 Matrix
+    if (current_dim == 1) {
+        unsigned idx = mask.find_first();
+        bool result = A(idx, idx) > 0;
+        memo[mask] = result ? 1 : 0;
+        return result;
+    }
+
+    // Recursive Step: Check all submatrices of order (n-1)
+    // We iterate ONLY over the bits that are currently set to turn them off one by one
+    for (unsigned i = mask.find_first(); i < 64; i = mask.find_next(i)) {
+        bitset64 sub_mask = mask;
+        sub_mask.reset(i); // Remove index i
+        
+        if (!checkRecursive(A, sub_mask, n)) {
+            memo[mask] = 0; // Fail early
+            return false;
+        }
+    }
+
+    // If submatrices are valid, perform Determinant/Adjugate Check
+    Eigen::MatrixXd subMat;
+    extract_submatrix(A, mask, current_dim, subMat);
+
+    double det = subMat.determinant();
+    const double EPSILON = 1e-9;
+
+    // Check condition: det < 0
+    if (det < -EPSILON) {
+        // Calculate Adjugate: adj(A) = A^-1 * det(A)
+        // If det is negative, we need to check if adj is strictly positive.
+        // Note: Using inverse() is numerically stable enough for this logical check 
+        // unless matrix is singular (det ~ 0), which is handled by the < -EPSILON check.
+        Eigen::MatrixXd adj = subMat.inverse() * det;
+
+        bool all_positive = true;
+        for (int r = 0; r < current_dim; ++r) {
+            for (int c = 0; c < current_dim; ++c) {
+                // If any element is <= 0, adj > 0 is false
+                if (adj(r, c) <= EPSILON) {
+                    all_positive = false;
+                    break;
+                }
+            }
+            if (!all_positive) break;
+        }
+
+        // If adj > 0 (and det < 0), Theorem says NOT strictly copositive
+        if (all_positive) {
+            memo[mask] = 0;
+            return false;
+        }
+    }
+
+    // Passed all checks
+    memo[mask] = 1;
+    return true;
+}
+
+// 5. Public API
+bool isStrictlyCopositive(const Eigen::MatrixXd& A) {
+    int n = static_cast<int>(A.rows());
+    if (n == 0) return true;
+    if (n > 64) throw std::runtime_error("Dimension exceeds 64");
+
+    // Clear cache for new computation
+    memo.clear();
+    
+    // Reserve map size to avoid reallocations (optional, heuristic)
+    // memo.reserve(1 << n); 
+
+    // Create mask with lower n bits set
+    bitset64 full_mask;
+    full_mask.set_all(n);
+
+    return checkRecursive(A, full_mask, n);
+}
+
+// =============================================================================
+// EXAMPLE USAGE
+// =============================================================================
+/*
+int main() {
+    Eigen::MatrixXd A(3, 3);
+    A << 1, -0.5, 0,
+        -0.5, 1, -0.5,
+         0, -0.5, 1;
+
+    bool result = isStrictlyCopositive(A);
+    std::cout << "Strictly Copositive: " << (result ? "Yes" : "No") << std::endl;
+    return 0;
+}
+*/
+
+
+
+// =============================================================================
+// MEMOIZED RATIONAL COPOSITIVITY CHECK
+// =============================================================================
+
+// Hash function for bitset64 to use with std::unordered_map
+struct bitset64_hash {
+    std::size_t operator()(const bitset64& bs) const noexcept {
+        return bs.hash();
+    }
+};
+
+// Global Memoization Table (inside namespace or static scope)
+// -1 = Unknown, 0 = False (Not Copositive), 1 = True (Strictly Copositive)
+static std::unordered_map<bitset64, int8_t, bitset64_hash> memo;
+
+// Helper: Efficient Submatrix Extraction for RationalMatrix
+inline void extract_rational_submatrix(const RationalMatrix& A, const bitset64& mask, int dim, RationalMatrix& sub) {
+    sub.resize(dim, dim);
+    int sub_i = 0;
+    // Iterate rows based on set bits
+    for (unsigned i = mask.find_first(); i < 64; i = mask.find_next(i)) {
+        int sub_j = 0;
+        // Iterate cols based on set bits
+        for (unsigned j = mask.find_first(); j < 64; j = mask.find_next(j)) {
+            sub(sub_i, sub_j) = A(static_cast<Eigen::Index>(i), static_cast<Eigen::Index>(j));
+            sub_j++;
+        }
+        sub_i++;
+    }
+}
+
+// Recursive Check (Hadeler Criterion) for Rationals
+inline bool checkRecursive(const RationalMatrix& A, const bitset64& mask) {
+    // 1. Check Cache
+    auto it = memo.find(mask);
+    if (it != memo.end()) {
+        return it->second == 1;
+    }
+
+    int current_dim = static_cast<int>(mask.count());
+
+    // 2. Base Case: 1x1 Matrix
+    if (current_dim == 1) {
+        unsigned idx = mask.find_first();
+        // Check if diagonal element > 0 (Rational comparison)
+        bool result = A(static_cast<Eigen::Index>(idx), static_cast<Eigen::Index>(idx)) > rational(0);
+        memo[mask] = result ? 1 : 0;
+        return result;
+    }
+
+    // 3. Recursive Step: Check all submatrices of size (current_dim - 1)
+    // We iterate ONLY over the bits that are currently set to turn them off one by one
+    for (unsigned i = mask.find_first(); i < 64; i = mask.find_next(i)) {
+        bitset64 sub_mask = mask;
+        sub_mask.reset(i); // Turn off bit i representing row/col i
+
+        if (!checkRecursive(A, sub_mask)) {
+            memo[mask] = 0; // Fail early
+            return false;
+        }
+    }
+
+    // 4. Determinant / Adjugate Check
+    // If all proper principal submatrices are strictly copositive,
+    // A is strictly copositive UNLESS (det(A) <= 0 AND adj(A) > 0)
+    
+    RationalMatrix subMat;
+    extract_rational_submatrix(A, mask, current_dim, subMat);
+
+    // Use matrix_ops::determinant
+    rational det = determinant(subMat);
+
+    if (det <= rational(0)) {
+        // Compute Adjugate
+        RationalMatrix adj = adjugate(subMat);
+
+        // Check if Adjugate is Strictly Positive (> 0)
+        // Use matrix_ops::all_entries_greater_zero
+        if (all_entries_greater_zero(adj)) {
+            memo[mask] = 0; // Violates Hadeler condition
+            return false;
+        }
+    }
+
+    // Passed all checks
+    memo[mask] = 1;
+    return true;
+}
+
+// Main Entry Point
+inline bool is_strictly_copositive(const RationalMatrix& A) {
+    int n = static_cast<int>(A.rows());
+    if (n == 0) return true;
+    if (n > 64) throw std::runtime_error("Dimension exceeds 64");
+
+    // Clear cache for new computation
+    memo.clear();
+    
+    // Create mask with lower n bits set
+    bitset64 full_mask;
+    full_mask.set_all(static_cast<unsigned>(n));
+
+    return checkRecursive(A, full_mask);
+}

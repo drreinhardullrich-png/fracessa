@@ -63,6 +63,10 @@ coverage.xml
 .pytest_cache
 .hypothesis
 
+# Python results
+python/results/
+
+
 # Backup files
 *.bak
 *.backup
@@ -70,11 +74,9 @@ coverage.xml
 zzz_altes_zeug.tar.gz
 old_code_backup.tar.gz
 
-# CMake FetchContent downloads
-_deps/
-build/_deps/
-
-# Third-party dependencies are now downloaded via FetchContent (not in repo)
+# CMake FetchContent downloads (now in third_party/)
+third_party/
+.deps/
 
 # Third-party archives
 *.tar.gz
