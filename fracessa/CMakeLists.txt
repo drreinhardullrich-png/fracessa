@@ -241,7 +241,6 @@ add_library(fracessa_lib
     src/fracessa.cpp
     src/findeq.cpp
     src/checkstab.cpp
-    src/fracessa_v2.cpp
     src/findeq_v2.cpp
     src/checkstab_v2.cpp
 )

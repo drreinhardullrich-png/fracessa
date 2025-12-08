@@ -1,11 +1,11 @@
-#include <fracessa/fracessa_v2.hpp>
+#include <fracessa/fracessa.hpp>
 #include <fracessa/bitset64.hpp>
 #include <rational_linalg/bareiss_gauss.hpp>
 #include <Eigen/LU>
 #include <limits>
 
 // Helper function to build full solution vector from support (double version)
-bool fracessa_v2::build_solution_vector(const DoubleVector& solution, DoubleVector& solution_full_n)
+bool fracessa::build_solution_vector(const DoubleVector& solution, DoubleVector& solution_full_n)
 {
     solution_full_n = DoubleVector::Zero(dimension_);
     
@@ -28,7 +28,7 @@ bool fracessa_v2::build_solution_vector(const DoubleVector& solution, DoubleVect
 }
 
 // Helper function to build full solution vector from support (rational version)
-bool fracessa_v2::build_solution_vector(const RationalVector& solution, RationalVector& solution_full_n)
+bool fracessa::build_solution_vector(const RationalVector& solution, RationalVector& solution_full_n)
 {
     solution_full_n = RationalVector::Zero(dimension_);
     
@@ -51,7 +51,7 @@ bool fracessa_v2::build_solution_vector(const RationalVector& solution, Rational
 }
 
 // Helper function to check constraints p'Ap<=v for rows not in support (double version)
-bool fracessa_v2::check_constraints(const DoubleVector& solution, const DoubleVector& solution_full_n)
+bool fracessa::check_constraints(const DoubleVector& solution, const DoubleVector& solution_full_n)
 {
     double errorbound_rowsum = 5e-5 * dimension_; // here use a wide margin. if it is a false positive, it will be eliminated by the rational check!
 
@@ -70,7 +70,7 @@ bool fracessa_v2::check_constraints(const DoubleVector& solution, const DoubleVe
 }
 
 // Helper function to check constraints p'Ap<=v for rows not in support (rational version)
-bool fracessa_v2::check_constraints(const RationalVector& solution, const RationalVector& solution_full_n, bitset64& extended_support)
+bool fracessa::check_constraints(const RationalVector& solution, const RationalVector& solution_full_n, bitset64& extended_support)
 {
     for (size_t i = 0; i < dimension_; i++) {
             if (!c_.support.test(i)) //not in the support - rows
@@ -89,7 +89,7 @@ bool fracessa_v2::check_constraints(const RationalVector& solution, const Ration
     return true;
 }
 
-bool fracessa_v2::find_candidate_double_optimized(DoubleMatrix& A_SS)
+bool fracessa::find_candidate_double_optimized(DoubleMatrix& A_SS)
 {
     // Note: Principal submatrices of circulant matrices are NOT necessarily circulant,
     // so we cannot use FFT solver here. We always use LDLT for principal submatrices.
@@ -143,7 +143,7 @@ bool fracessa_v2::find_candidate_double_optimized(DoubleMatrix& A_SS)
     return true;
 }
 
-bool fracessa_v2::find_candidate_double(DoubleMatrix& A, DoubleVector& b)
+bool fracessa::find_candidate_double(DoubleMatrix& A, DoubleVector& b)
 {
     Eigen::PartialPivLU<DoubleMatrix> lu(A);
     
@@ -171,7 +171,7 @@ bool fracessa_v2::find_candidate_double(DoubleMatrix& A, DoubleVector& b)
 }
 
 
-bool fracessa_v2::find_candidate_rational_optimized(RationalMatrix& A_SS)
+bool fracessa::find_candidate_rational_optimized(RationalMatrix& A_SS)
 {
     // Use BareissLU to solve A_{S,S} * v = 1_k (A_SS is symmetric)
     rational_linalg::BareissGauss<rational> bareiss(A_SS);
@@ -229,7 +229,7 @@ bool fracessa_v2::find_candidate_rational_optimized(RationalMatrix& A_SS)
     return true;
 }
 
-bool fracessa_v2::find_candidate_rational(RationalMatrix& A, RationalVector& b)
+bool fracessa::find_candidate_rational(RationalMatrix& A, RationalVector& b)
 {
     // Use BareissLU solver (fraction-free for exact arithmetic)
     rational_linalg::BareissGauss<rational> bareiss(A);

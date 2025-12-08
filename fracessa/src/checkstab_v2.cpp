@@ -1,10 +1,10 @@
-#include <fracessa/fracessa_v2.hpp>
+#include <fracessa/fracessa.hpp>
 #include <fracessa/bitset64.hpp>
 #include <rational_linalg/copositivity.hpp>
 #include <rational_linalg/matrix_ops.hpp>
 #include <Eigen/Cholesky>
 
-void fracessa_v2::check_stability()
+void fracessa::check_stability()
 {
     bitset64 bitsetm = c_.support.lowest_set_bit(); //get lowest set bit as bitfield
     bitset64 extended_support_reduced = c_.extended_support.subtract(bitsetm); //ext support without m
