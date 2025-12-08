@@ -4,9 +4,11 @@
 #include <string>
 #include <chrono>
 #include <iomanip>
+#include <cstdint>
 
 #include <fracessa/fracessa.hpp>
-#include <fracessa/matrix.hpp>
+#include <fracessa/rational.hpp>
+#include <rational_linalg/matrix.hpp>
 #include <argparse/argparse.hpp>
 #include <boost/algorithm/string.hpp>
 
@@ -41,7 +43,7 @@ int main(int argc, char *argv[])
         .implicit_value(true)
         .default_value(false);
 
-    program.add_argument("-m", "--matrix-id")
+    program.add_argument("-m", "--matrixid")
         .help("optional matrix ID to write in the log file")
         .scan<'i', int>()
         .default_value(-1);
@@ -64,7 +66,7 @@ int main(int argc, char *argv[])
     auto exact = program.get<bool>("--exact");
     auto fullsupport = program.get<bool>("--fullsupport");
     auto timing = program.get<bool>("--timing");
-    auto matrix_id = program.get<int>("--matrix-id");
+    auto matrix_id = program.get<int>("--matrixid");
 
     // Parse CLI string format: "n#values"
     std::vector<std::string> first_split;
@@ -85,11 +87,23 @@ int main(int argc, char *argv[])
     std::vector<std::string> second_split;
     boost::split(second_split, first_split[1], boost::is_any_of(","));
     
-    // Convert string values to rational
-    std::vector<rational> rational_values;
+    // Convert string values to small_rational
+    std::vector<small_rational> rational_values;
     try {
         for (const auto& str_val : second_split) {
-            rational_values.push_back(rational(str_val));
+            // Parse string as "numerator/denominator" or just "numerator"
+            std::string val_str = str_val;
+            size_t slash_pos = val_str.find('/');
+            if (slash_pos != std::string::npos) {
+                // Has denominator
+                int64_t num = std::stoll(val_str.substr(0, slash_pos));
+                int64_t den = std::stoll(val_str.substr(slash_pos + 1));
+                rational_values.push_back(small_rational(num, den));
+            } else {
+                // No denominator, treat as integer
+                int64_t num = std::stoll(val_str);
+                rational_values.push_back(small_rational(num, 1));
+            }
         }
     } catch (std::exception& e) {
         std::cerr << "Error: Could not convert matrix values to rational numbers!" << std::endl;
@@ -97,21 +111,32 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
     
-    RationalMatrix A;
+    rational_linalg::SmallRationalMatrix A_small;
     bool is_cs;
     
     if (rational_values.size() == n/2) {
         // Circular symmetric matrix
-        A = matrix_ops::create_circular_symmetric(n, rational_values);
+        A_small = rational_linalg::create_circular_symmetric<small_rational>(n, rational_values);
         is_cs = true;
     } else if (rational_values.size() == n*(n+1)/2) {
         // Symmetric matrix (upper triangular)
-        A = matrix_ops::create_symmetric(n, rational_values);
+        A_small = rational_linalg::create_symmetric<small_rational>(n, rational_values);
         is_cs = false;
     } else {
         std::cerr << "Error: The number of matrix-elements must either be floor(dimension/2) (for a circular symmetric matrix) or dimension*(dimension+1)/2 (for a symmetric matrix)!" << std::endl;
         std::cerr << "  Got " << rational_values.size() << " values, but expected " << n/2 << " (circular symmetric) or " << n*(n+1)/2 << " (symmetric)." << std::endl;
         return EXIT_FAILURE;
+    }
+    
+    // Convert SmallRationalMatrix to RationalMatrix
+    RationalMatrix A(n, n);
+    for (size_t i = 0; i < n; ++i) {
+        for (size_t j = 0; j < n; ++j) {
+            // Convert from small_rational to rational via string (most reliable method)
+            std::ostringstream oss;
+            oss << A_small(i, j);
+            A(i, j) = rational(oss.str());
+        }
     }
     
     // Measure computation time
@@ -123,7 +148,7 @@ int main(int argc, char *argv[])
     auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
     double elapsed_seconds = duration.count() / 1000000.0;
 
-    std::cout << x.ess_count << std::endl;
+    std::cout << x.ess_count_ << std::endl;
     
     // Output timing on second line if -t flag is present
     if (timing) {
@@ -132,7 +157,7 @@ int main(int argc, char *argv[])
 
     if (candidates) {
         std::cout << candidate::header() << std::endl;
-        for (auto c: x.candidates) {
+        for (auto c: x.candidates_) {
             std::cout << c.to_string() << std::endl;
         }
     }

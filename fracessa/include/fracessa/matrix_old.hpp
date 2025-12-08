@@ -5,7 +5,7 @@
 #include <sstream>
 #include <cmath>
 
-#include <fracessa/types.hpp>
+#include <fracessa/rational.hpp>
 #include <fracessa/bitset64.hpp>
 #include <eigen_extensions/rational_eigen.hpp>
 #include <Eigen/Dense>
@@ -96,7 +96,7 @@ inline std::string to_string(const MatrixType& A)
     for (Eigen::Index j=0; j<static_cast<Eigen::Index>(A.cols()); j++)
       oss << A(i,j) << ",";
     if (i < static_cast<Eigen::Index>(A.rows()) - 1)
-      oss << std::endl;
+    oss << std::endl;
   }
   return oss.str();
 }
@@ -204,27 +204,19 @@ inline void get_kkt_rhs(size_t support_size, RationalVector& b)
 
 // Extract principal submatrix from matrix using bitset64 mask (reuse version for optimization)
 // Optimized: only iterates over SET bits using find_first()/find_next() for better performance
+// NOTE: submatrix must already be correctly sized (support_size x support_size) before calling!
 template<typename MatrixType>
-inline void principal_submatrix(const MatrixType& A, size_t /*dimension*/, const bitset64& support, size_t support_size, MatrixType& submatrix)
+inline void principal_submatrix(const MatrixType& A, size_t /*dimension*/, const bitset64& support, size_t /*support_size*/, MatrixType& submatrix)
 {
-  // Only resize if needed, and matrix is square, so check for rows is sufficient
-  if (submatrix.rows() != static_cast<Eigen::Index>(support_size)) {
-    submatrix = MatrixType::Zero(support_size, support_size);
-  } else {
-    submatrix.setZero();
-  }
-  
   // Only iterate over SET bits for efficiency
   size_t row = 0;
-  support.for_each_set_bit([&](unsigned i) {
-    size_t col = 0;
-    support.for_each_set_bit([&](unsigned j) {
+  support.for_each_set_bit_no_exit([&](unsigned i) {
+      size_t col = 0;
+    support.for_each_set_bit_no_exit([&](unsigned j) {
       submatrix(static_cast<Eigen::Index>(row), static_cast<Eigen::Index>(col)) = A(static_cast<Eigen::Index>(i), static_cast<Eigen::Index>(j));
-      ++col;
-      return true; // Continue iteration
+          ++col;
     });
-    ++row;
-    return true; // Continue iteration
+      ++row;
   });
 }
 
@@ -302,139 +294,139 @@ inline bool is_positive_definite_rational(const RationalMatrix& A)
 //   return true;  // All pivots positive
 // }
 
-// Check if matrix is positive definite (Cholesky for double)
-inline bool is_positive_definite_double(const DoubleMatrix& A)
-{
-  // cholesky-decomposition for double!
-  int n = A.rows();
-  DoubleMatrix L = DoubleMatrix::Zero(n, n);
+// // Check if matrix is positive definite (Cholesky for double)
+// inline bool is_positive_definite_double(const DoubleMatrix& A)
+// {
+//   // cholesky-decomposition for double!
+//   int n = A.rows();
+//   DoubleMatrix L = DoubleMatrix::Zero(n, n);
 
-  for (int i = 0; i < n; i++) {
-    for (int j = 0; j < i; j++) {
-      double aSum = 0.;
-      for (int k = 0; k < j; k++)
-        aSum += L(i,k) * L(j,k);
-      L(i,j) = (1 / L(j,j)) * (A(i,j) - aSum);
-    }
-    double bSum = 0.;
-    for (int k = 0; k < i; k++)
-      bSum += L(i,k) * L(i,k);
-    double x = A(i,i) - bSum;
-    if (x< 0.01)
-      return false;
-    L(i,i) = sqrt(x);
-  }
-  return true;
-}
+//   for (int i = 0; i < n; i++) {
+//     for (int j = 0; j < i; j++) {
+//       double aSum = 0.;
+//       for (int k = 0; k < j; k++)
+//         aSum += L(i,k) * L(j,k);
+//       L(i,j) = (1 / L(j,j)) * (A(i,j) - aSum);
+//     }
+//     double bSum = 0.;
+//     for (int k = 0; k < i; k++)
+//       bSum += L(i,k) * L(i,k);
+//     double x = A(i,i) - bSum;
+//     if (x< 0.01)
+//       return false;
+//     L(i,i) = sqrt(x);
+//   }
+//   return true;
+// }
 
-// Compute determinant (LU decomposition, Crout algorithm)
-inline rational determinant(const RationalMatrix& A)
-{
-  //lu-decomposition, crout-algorithm
-  RationalMatrix a = A;
-  size_t n = A.rows();
-  std::vector<size_t> indx = std::vector<size_t>(n);
-  std::vector<rational> vv = std::vector<rational>(n);
-  int d = 1;
+// // Compute determinant (LU decomposition, Crout algorithm)
+// inline rational determinant(const RationalMatrix& A)
+// {
+//   //lu-decomposition, crout-algorithm
+//   RationalMatrix a = A;
+//   size_t n = A.rows();
+//   std::vector<size_t> indx = std::vector<size_t>(n);
+//   std::vector<rational> vv = std::vector<rational>(n);
+//   int d = 1;
 
-  size_t i, imax, j, k;
-  rational big, sum, temp;
+//   size_t i, imax, j, k;
+//   rational big, sum, temp;
 
-  /* search for the largest element in each row; save the scaling in the
-  temporary array vv and return zero if the matrix is singular */
-  for(i=0; i<n; i++) {
-    big=0.;
-    for(j=0;j<n;j++) if((temp=abs(a(i,j)))>big) big=temp;
-    if(big==0) return(0);
-    vv[i]=big;
-   }
-   /* the main loop for the Crout's algorithm */
-   for(j=0;j<n;j++) {
-    /* this is the part a) of the algorithm except for i==j */
-    for(i=0;i<j;i++) {
-      sum=a(i,j);
-      for(k=0;k<i;k++) sum-=a(i,k)*a(k,j);
-      a(i,j)=sum;
-    }
-    /* initialize for the search for the largest pivot element */
-    big=0;imax=j;
-    /* this is the part a) for i==j and part b) for i>j + pivot search */
-    for(i=j;i<n;i++) {
-      sum=a(i,j);
-      for(k=0;k<j;k++) sum-=a(i,k)*a(k,j);
-      a(i,j)=sum;
-      /* is the figure of merit for the pivot better than the best so far? */
-      if((temp=vv[i]*abs(sum))>=big) {big=temp;imax=i;}
-    }
-    /* interchange rows, if needed, change parity and the scale factor */
-    if(imax!=j) {
-      for(k=0;k<n;k++) {temp=a(imax,k);a(imax,k)=a(j,k);a(j,k)=temp;}
-      d=-d;vv[imax]=vv[j];
-    }
-    /* store the index */
-    indx[j]=imax;
-    if(a(j,j)==0) return(0);
-    /* finally, divide by the pivot element */
-    if(j<n-1) {
-      temp=1/a(j,j);
-      for(i=j+1;i<n;i++) a(i,j)*=temp;
-    }
-  }
-  rational res = d;
-  for(j=0; j<n; j++) res *= a(j,j);
-  return(res);
-}
+//   /* search for the largest element in each row; save the scaling in the
+//   temporary array vv and return zero if the matrix is singular */
+//   for(i=0; i<n; i++) {
+//     big=0.;
+//     for(j=0;j<n;j++) if((temp=abs(a(i,j)))>big) big=temp;
+//     if(big==0) return(0);
+//     vv[i]=big;
+//    }
+//    /* the main loop for the Crout's algorithm */
+//    for(j=0;j<n;j++) {
+//     /* this is the part a) of the algorithm except for i==j */
+//     for(i=0;i<j;i++) {
+//       sum=a(i,j);
+//       for(k=0;k<i;k++) sum-=a(i,k)*a(k,j);
+//       a(i,j)=sum;
+//     }
+//     /* initialize for the search for the largest pivot element */
+//     big=0;imax=j;
+//     /* this is the part a) for i==j and part b) for i>j + pivot search */
+//     for(i=j;i<n;i++) {
+//       sum=a(i,j);
+//       for(k=0;k<j;k++) sum-=a(i,k)*a(k,j);
+//       a(i,j)=sum;
+//       /* is the figure of merit for the pivot better than the best so far? */
+//       if((temp=vv[i]*abs(sum))>=big) {big=temp;imax=i;}
+//     }
+//     /* interchange rows, if needed, change parity and the scale factor */
+//     if(imax!=j) {
+//       for(k=0;k<n;k++) {temp=a(imax,k);a(imax,k)=a(j,k);a(j,k)=temp;}
+//       d=-d;vv[imax]=vv[j];
+//     }
+//     /* store the index */
+//     indx[j]=imax;
+//     if(a(j,j)==0) return(0);
+//     /* finally, divide by the pivot element */
+//     if(j<n-1) {
+//       temp=1/a(j,j);
+//       for(i=j+1;i<n;i++) a(i,j)*=temp;
+//     }
+//   }
+//   rational res = d;
+//   for(j=0; j<n; j++) res *= a(j,j);
+//   return(res);
+// }
 
-// Transpose
-inline RationalMatrix transpose(const RationalMatrix& A)
-{
-  return A.transpose();
-}
+// // Transpose
+// inline RationalMatrix transpose(const RationalMatrix& A)
+// {
+//   return A.transpose();
+// }
 
-// Develop by (remove row and column)
-inline RationalMatrix develop_by(const RationalMatrix& A, size_t row, size_t col)
-{
-  Eigen::Index rows = static_cast<Eigen::Index>(A.rows());
-  Eigen::Index cols = static_cast<Eigen::Index>(A.cols());
-  RationalMatrix result = RationalMatrix::Zero(rows-1, cols-1);
-  for (Eigen::Index i=0; i<rows-1; i++)
-    for (Eigen::Index j=0; j<cols-1; j++) {
-      Eigen::Index row_index_real = (i>=static_cast<Eigen::Index>(row)) ? i+1 : i;
-      Eigen::Index col_index_real = (j>=static_cast<Eigen::Index>(col)) ? j+1 : j;
-      result(i,j) = A(row_index_real, col_index_real);
-    }
-  return result;
-}
+// // Develop by (remove row and column)
+// inline RationalMatrix develop_by(const RationalMatrix& A, size_t row, size_t col)
+// {
+//   Eigen::Index rows = static_cast<Eigen::Index>(A.rows());
+//   Eigen::Index cols = static_cast<Eigen::Index>(A.cols());
+//   RationalMatrix result = RationalMatrix::Zero(rows-1, cols-1);
+//   for (Eigen::Index i=0; i<rows-1; i++)
+//     for (Eigen::Index j=0; j<cols-1; j++) {
+//       Eigen::Index row_index_real = (i>=static_cast<Eigen::Index>(row)) ? i+1 : i;
+//       Eigen::Index col_index_real = (j>=static_cast<Eigen::Index>(col)) ? j+1 : j;
+//       result(i,j) = A(row_index_real, col_index_real);
+//     }
+//   return result;
+// }
 
-// Adjugate
-inline RationalMatrix adjugate(const RationalMatrix& A)
-{
-  Eigen::Index rows = static_cast<Eigen::Index>(A.rows());
-  Eigen::Index cols = static_cast<Eigen::Index>(A.cols());
-  RationalMatrix result = RationalMatrix::Zero(rows, cols);
+// // Adjugate
+// inline RationalMatrix adjugate(const RationalMatrix& A)
+// {
+//   Eigen::Index rows = static_cast<Eigen::Index>(A.rows());
+//   Eigen::Index cols = static_cast<Eigen::Index>(A.cols());
+//   RationalMatrix result = RationalMatrix::Zero(rows, cols);
 
-  if (rows == 1) {
-    result(0,0) = 1;
-    return result;
-  }
+//   if (rows == 1) {
+//     result(0,0) = 1;
+//     return result;
+//   }
 
-  for (Eigen::Index i=0; i<rows; i++) {
-    for (Eigen::Index j=0; j<cols; j++) {
-      result(i,j) = std::pow(-1, static_cast<int>(i+j)) * determinant(develop_by(A, static_cast<size_t>(i), static_cast<size_t>(j)));
-    }
-  }
-  return transpose(result);
-}
+//   for (Eigen::Index i=0; i<rows; i++) {
+//     for (Eigen::Index j=0; j<cols; j++) {
+//       result(i,j) = std::pow(-1, static_cast<int>(i+j)) * determinant(develop_by(A, static_cast<size_t>(i), static_cast<size_t>(j)));
+//     }
+//   }
+//   return transpose(result);
+// }
 
-// Check if all elements are greater than zero
-inline bool all_entries_greater_zero(const RationalMatrix& A)
-{
-  for (Eigen::Index i=0; i<static_cast<Eigen::Index>(A.rows()); i++)
-    for (Eigen::Index j=0; j<static_cast<Eigen::Index>(A.cols()); j++)
-      if (A(i,j) <= 0)
-        return false;
-  return true;
-}
+// // Check if all elements are greater than zero
+// inline bool all_entries_greater_zero(const RationalMatrix& A)
+// {
+//   for (Eigen::Index i=0; i<static_cast<Eigen::Index>(A.rows()); i++)
+//     for (Eigen::Index j=0; j<static_cast<Eigen::Index>(A.cols()); j++)
+//       if (A(i,j) <= 0)
+//         return false;
+//   return true;
+// }
 
 // // Check if matrix is copositive
 // inline bool is_strictly_copositive(const RationalMatrix& A)

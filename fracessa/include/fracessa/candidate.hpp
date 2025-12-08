@@ -1,16 +1,18 @@
 #ifndef CANDIDATE_H
 #define CANDIDATE_H
 
-#include <fracessa/matrix.hpp>
+#include <rational_linalg/matrix.hpp>
+#include <fracessa/rational.hpp>
 #include <fracessa/bitset64.hpp>
+#include <string>
 
 class candidate
 {
     public:
         size_t candidate_id = 0;
-        RationalVector vector;
+        rational_linalg::Matrix<rational> vector;  // Column vector: Matrix<rational>(n, 1)
         bitset64 support;
-        size_t support_size;
+        size_t support_size = 0;
         bitset64 extended_support;
         size_t extended_support_size;
         size_t shift_reference;
@@ -24,10 +26,10 @@ class candidate
         {
             std::string str = "";
             str += std::to_string(candidate_id) + ";";
-            for (Eigen::Index i = 0; i < vector.size(); i++) {
-                str += vector(i).template convert_to<std::string>() + ",";
+            for (size_t i = 0; i < vector.rows(); i++) {
+                str += vector(i, 0).template convert_to<std::string>() + ",";
             }
-            if (vector.size() > 0)
+            if (vector.rows() > 0)
                 str.pop_back();
             str += ";" + support.to_string() + ";";
             str += std::to_string(support_size) + ";";

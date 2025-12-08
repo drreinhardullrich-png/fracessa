@@ -56,6 +56,13 @@ public:
     FORCE_INLINE bitset64& operator=(const bitset64& o) noexcept = default;
     FORCE_INLINE bitset64& operator=(bitset64&& o) noexcept = default;
 
+    //careful! no check for the biggest element here! done outside!
+    FORCE_INLINE bitset64 next_bitset_with_same_popcount() const noexcept {
+        uint64_t t = bits_ | (bits_ - 1);
+        return bitset64((t + 1) | (((~t & -~t) - 1) >> (ctz64(bits_) + 1)));
+    }
+
+
     // Helper function to iterate through all non-empty support sets
     // Calls callback for each bitset64 from 1 to (1<<nbits)-1
     template<typename F>
@@ -67,6 +74,7 @@ public:
 
     // Iterate over all set bits, calling callback with each bit position
     // Returns false if callback returns false (early exit), true if all iterations complete
+    // Use this for copositivity checks where early exit is needed
     template<typename F>
     FORCE_INLINE bool for_each_set_bit(F&& callback) const noexcept {
         for (unsigned i = find_first(); i < 64; i = find_next(i)) {
@@ -75,6 +83,16 @@ public:
             }
         }
         return true; // All iterations completed
+    }
+
+    // Iterate over all set bits, calling callback with each bit position
+    // Always completes all iterations (no early exit)
+    // Use this for checkstab.cpp and matrix operations where all bits must be processed
+    template<typename F>
+    FORCE_INLINE void for_each_set_bit_no_exit(F&& callback) const noexcept {
+        for (unsigned i = find_first(); i < 64; i = find_next(i)) {
+            callback(i);
+        }
     }
 
     // --------------------------
@@ -139,6 +157,27 @@ public:
         return bitset64(min_val);
     }
 
+    // Check if this bitset is in its smallest representation (canonical form)
+    // Uses early exit: returns false immediately if any rotation is smaller than original
+    // Much faster than smallest_representation() == *this for canonical checks
+    // Optimized version: reduces masking operations for better performance
+    FORCE_INLINE bool is_smallest_representation(unsigned nbits) const noexcept {
+        uint64_t mask = (1ULL << nbits) - 1ULL;
+        uint64_t original = bits_ & mask;
+        
+        uint64_t current = original;
+        unsigned shift_left = nbits - 1;
+        
+        for (unsigned i = 1; i < nbits; i++) {
+            current = ((current >> 1) | (current << shift_left)) & mask;
+            if (current < original) {
+                return false; //there exists a smaller representation, ie. this one cannot be canonical!
+            }
+        }
+        // All rotations are >= original, so it's canonical
+        return true;
+    }
+
     // --------------------------
     // non-modifying bitwise ops (NO nbits needed for &, |, ^)
     // --------------------------
@@ -155,6 +194,10 @@ public:
     FORCE_INLINE bool is_subset_of(const bitset64 &o) const noexcept { return (bits_ & ~o.bits_) == 0ULL; }
     FORCE_INLINE bool operator==(const bitset64 &o) const noexcept { return bits_ == o.bits_; }
     FORCE_INLINE bool operator!=(const bitset64 &o) const noexcept { return bits_ != o.bits_; }
+    FORCE_INLINE bool operator<=(const bitset64 &o) const noexcept { return bits_ <= o.bits_; }
+    FORCE_INLINE bool operator<(const bitset64 &o) const noexcept { return bits_ < o.bits_; }
+    FORCE_INLINE bool operator>=(const bitset64 &o) const noexcept { return bits_ >= o.bits_; }
+    FORCE_INLINE bool operator>(const bitset64 &o) const noexcept { return bits_ > o.bits_; }
 
     // --------------------------
     // popcount / size of support (NO nbits needed)

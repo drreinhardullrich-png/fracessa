@@ -1,61 +1,43 @@
 #pragma once
-
-/*
- * BareissLU (fraction-free LU) solver
- *
- * Speed:
- *   - Complexity: O(n^3), same as standard LU.
- *   - Much slower in practice with rational or big integer types
- *     because intermediate numbers grow rapidly.
- *   - For floating-point, Bareiss is slower than PartialPivLU
- *     because it avoids floating-point division tricks and uses exact arithmetic.
- *
- * Stability / Accuracy:
- *   - Perfect for rational or symbolic types; no rounding errors.
- *   - Detects singular matrices exactly (pivot = 0).
- *   - Great for ill-conditioned matrices in exact arithmetic because
- *     no division by small numbers until necessary.
- *   - Cannot suffer from numerical instability in exact arithmetic.
- *
- * Use case:
- *   - Exact solutions, guaranteed singularity detection,
- *     symbolic or rational arithmetic.
- */
-
 #include <Eigen/Dense>
+#include <cmath>
 
 namespace Eigen {
 namespace Ext {
 
 template <typename MatrixType>
-class BareissLU {
+class BareissLUFactor {
 public:
-    using Scalar      = typename MatrixType::Scalar;
-    using Index       = typename MatrixType::Index;
-    using VectorType  = Eigen::Matrix<Scalar, MatrixType::RowsAtCompileTime, 1>;
+    using Scalar     = typename MatrixType::Scalar;
+    using Index      = typename MatrixType::Index;
+    using VectorType = Eigen::Matrix<Scalar, MatrixType::RowsAtCompileTime, 1>;
 
-    explicit BareissLU(const MatrixType& A) : m_A(A) {}
+    BareissLUFactor(const MatrixType& A) {
+        compute(A);
+    }
 
-    bool solve(const VectorType& b, VectorType& x) const {
-        const Index n = m_A.rows();
-        if (m_A.cols() != n || b.size() != n) return false;
-
-        // Build augmented matrix [A | b]
-        Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic> M(n, n + 1);
-        M.leftCols(n) = m_A;
-        M.col(n) = b;
+    // ------------------------------------------------------------------------
+    // Perform fraction-free LU factorization using Bareiss algorithm
+    // ------------------------------------------------------------------------
+    void compute(const MatrixType& A) {
+        const Index n = A.rows();
+        m_n = n;
+        m_L = MatrixType::Identity(n, n);
+        m_U = A;
+        m_P.setIdentity(n, n);
+        m_swap_count = 0;
 
         Scalar divPrev = Scalar(1);
 
-        // Bareiss elimination with partial pivoting
         for (Index k = 0; k < n - 1; ++k) {
-            // Partial pivoting: find row with maximum absolute value in column k
+
+            // ----- Partial Pivoting -----
             Index max_row = k;
-            Scalar max_val = M(k, k);
+            Scalar max_val = m_U(k, k);
             if (max_val < Scalar(0)) max_val = -max_val;
             
             for (Index i = k + 1; i < n; ++i) {
-                Scalar val = M(i, k);
+                Scalar val = m_U(i, k);
                 if (val < Scalar(0)) val = -val;
                 if (val > max_val) {
                     max_val = val;
@@ -63,48 +45,107 @@ public:
                 }
             }
             
-            // Swap rows if necessary
             if (max_row != k) {
-                M.row(k).swap(M.row(max_row));
+                m_U.row(k).swap(m_U.row(max_row));
+                m_P.row(k).swap(m_P.row(max_row));
+                // L rows up to k-1 also swap to maintain LU decomposition
+                if (k > 0)
+                    m_L.block(k, 0, 1, k).swap(m_L.block(max_row, 0, 1, k));
+                m_swap_count++;
             }
             
-            const Scalar pivot = M(k, k);
+            const Scalar pivot = m_U(k, k);
             if (pivot == Scalar(0)) {
-                return false;
+                m_is_singular = true;
+                return;
             }
 
-            // Bareiss elimination step
+            // ----- Bareiss Fraction-Free Update -----
             for (Index i = k + 1; i < n; ++i) {
-                for (Index j = k + 1; j <= n; ++j) {
-                    M(i, j) = (M(i, j) * pivot - M(i, k) * M(k, j)) / divPrev;
+                m_L(i, k) = m_U(i, k) / pivot;   // store multiplier
+
+                for (Index j = k + 1; j < n; ++j) {
+                    m_U(i, j) =
+                        (m_U(i, j) * pivot - m_U(i, k) * m_U(k, j)) / divPrev;
                 }
-                M(i, k) = Scalar(0);
+                m_U(i, k) = Scalar(0);
             }
 
             divPrev = pivot;
         }
 
-        if (M(n - 1, n - 1) == Scalar(0)) return false;
-
-        // Back substitution
-        x.resize(n);
-        for (Index i = n - 1; i >= 0; --i) {
-            Scalar sum = M(i, n);
-            for (Index j = i + 1; j < n; ++j) {
-                sum -= M(i, j) * x(j);
-            }
-
-            const Scalar pivot = M(i, i);
-            if (pivot == Scalar(0)) return false;
-
-            x(i) = sum / pivot;
-        }
-
-        return true;
+        m_is_singular = (m_U(n - 1, n - 1) == Scalar(0));
     }
 
+    // ------------------------------------------------------------------------
+    // Compute exact determinant
+    // ------------------------------------------------------------------------
+    Scalar determinant() const {
+        if (m_is_singular) return Scalar(0);
+
+        Scalar det = Scalar(1);
+
+        // determinant(P) = sign of permutation = (-1)^(swap_count)
+        if (m_swap_count % 2 == 1) det = Scalar(-1);
+
+        for (Index i = 0; i < m_n; ++i)
+            det *= m_U(i, i);
+
+        return det;
+    }
+
+    // ------------------------------------------------------------------------
+    // Compute inverse matrix via LU solve
+    // ------------------------------------------------------------------------
+    MatrixType inverse() const {
+        MatrixType Inv(m_n, m_n);
+
+        if (m_is_singular)
+            throw std::runtime_error("Matrix is singular");
+
+        for (Index col = 0; col < m_n; ++col) {
+            VectorType e = VectorType::Zero(m_n);
+            e(col) = Scalar(1);
+            Inv.col(col) = solve(e);
+        }
+
+        return Inv;
+    }
+
+    // ------------------------------------------------------------------------
+    // Solve Ax = b using computed LU: A = P^T * L * U
+    // ------------------------------------------------------------------------
+    VectorType solve(const VectorType& b) const {
+        VectorType bp = m_P * b;
+        VectorType y(m_n), x(m_n);
+
+        // Forward substitution: L y = bp
+        for (Index i = 0; i < m_n; ++i) {
+            Scalar sum = bp(i);
+            for (Index j = 0; j < i; ++j)
+                sum -= m_L(i, j) * y(j);
+            y(i) = sum;
+        }
+
+        // Back substitution: U x = y
+        for (Index i = m_n - 1; i >= 0; --i) {
+            Scalar sum = y(i);
+            for (Index j = i + 1; j < m_n; ++j)
+                sum -= m_U(i, j) * x(j);
+            x(i) = sum / m_U(i, i);
+        }
+
+        return x;
+    }
+
+    bool isSingular() const { return m_is_singular; }
+
 private:
-    MatrixType m_A;
+    Index m_n;
+    MatrixType m_L, m_U;
+    Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic> m_P;
+    bool m_is_singular = false;
+    int m_swap_count = 0;
 };
 
 } // namespace Ext

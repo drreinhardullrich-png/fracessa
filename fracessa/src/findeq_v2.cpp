@@ -1,85 +1,11 @@
-#include <fracessa/fracessa.hpp>
+#include <fracessa/fracessa_v2.hpp>
 #include <fracessa/bitset64.hpp>
 #include <rational_linalg/bareiss_gauss.hpp>
 #include <Eigen/LU>
 #include <limits>
 
-/*
- * ============================================================================
- * Why PartialPivLU is the right choice for your constraints
- * ============================================================================
- * 
- * Your requirements were:
- * 
- * 1. Fastest possible algorithm
- *    PartialPivLU is significantly faster than ColPivHouseholderQR
- *    (~2× faster on average, sometimes more).
- * 
- * 2. Never return "no solution" unless 100% certain
- *    To meet this requirement, you must use a very conservative singularity
- *    check (machine epsilon).
- * 
- *    PartialPivLU works perfectly for this:
- *    Pivot = 0 → matrix is mathematically singular → "no solution"
- *    Pivot > epsilon → treat as invertible
- * 
- * 3. Prefer a wrong solution over a false "no solution"
- *    PartialPivLU is more "optimistic" and will attempt a solution unless
- *    pivot is truly zero.
- * 
- * 4. A is square
- *    So QR (which normally handles rectangular) provides no special benefit.
- * 
- * 5. You do NOT want least-norm or least-squares
- *    ColPivHouseholderQR is a least-squares solver and will always return a
- *    solution even when A is singular — unless you enable thresholding, which
- *    becomes harder to tune for your requirement ("100% sure").
- * 
- *    LU is simpler and clearer:
- *    A pivot of 0 = singular.
- *    QR has no such clear criterion.
- * 
- * ============================================================================
- * Why NOT ColPivHouseholderQR in your case
- * ============================================================================
- * 
- * QR with column pivoting is:
- *     more stable, but
- *     slower, and
- *     its rank detection always depends on a tolerance.
- * 
- * There is no "100% certain" singularity detection with QR unless the matrix
- * has an exact zero column after pivoting — a rare event due to floating-point
- * operations.
- * 
- * To avoid false "no solution", you would need a very small tolerance, but
- * then QR loses its stability advantage.
- * 
- * In short:
- *     ✔ LU lets you reliably detect a pivot=0
- *     ✖ QR's rank detection is always tolerance-based
- * 
- * ============================================================================
- * FINAL RECOMMENDATION
- * ============================================================================
- * 
- * 👉 Choose PartialPivLU
- * 
- * with a pivot threshold:
- *     const double tol = std::numeric_limits<double>::epsilon();
- * 
- * This gives you:
- *     • Fastest speed
- *     • Clear singularity detection (pivot=0)
- *     • Zero risk of false "no solution"
- *     • A solution in all borderline cases
- *     • Minimal complexity
- * 
- * ============================================================================
- */
-
 // Helper function to build full solution vector from support (double version)
-bool fracessa::build_solution_vector(const DoubleVector& solution, DoubleVector& solution_full_n)
+bool fracessa_v2::build_solution_vector(const DoubleVector& solution, DoubleVector& solution_full_n)
 {
     solution_full_n = DoubleVector::Zero(dimension_);
     
@@ -102,7 +28,7 @@ bool fracessa::build_solution_vector(const DoubleVector& solution, DoubleVector&
 }
 
 // Helper function to build full solution vector from support (rational version)
-bool fracessa::build_solution_vector(const RationalVector& solution, RationalVector& solution_full_n)
+bool fracessa_v2::build_solution_vector(const RationalVector& solution, RationalVector& solution_full_n)
 {
     solution_full_n = RationalVector::Zero(dimension_);
     
@@ -125,7 +51,7 @@ bool fracessa::build_solution_vector(const RationalVector& solution, RationalVec
 }
 
 // Helper function to check constraints p'Ap<=v for rows not in support (double version)
-bool fracessa::check_constraints(const DoubleVector& solution, const DoubleVector& solution_full_n)
+bool fracessa_v2::check_constraints(const DoubleVector& solution, const DoubleVector& solution_full_n)
 {
     double errorbound_rowsum = 5e-5 * dimension_; // here use a wide margin. if it is a false positive, it will be eliminated by the rational check!
 
@@ -144,7 +70,7 @@ bool fracessa::check_constraints(const DoubleVector& solution, const DoubleVecto
 }
 
 // Helper function to check constraints p'Ap<=v for rows not in support (rational version)
-bool fracessa::check_constraints(const RationalVector& solution, const RationalVector& solution_full_n, bitset64& extended_support)
+bool fracessa_v2::check_constraints(const RationalVector& solution, const RationalVector& solution_full_n, bitset64& extended_support)
 {
     for (size_t i = 0; i < dimension_; i++) {
             if (!c_.support.test(i)) //not in the support - rows
@@ -163,7 +89,7 @@ bool fracessa::check_constraints(const RationalVector& solution, const RationalV
     return true;
 }
 
-bool fracessa::find_candidate_double_optimized(DoubleMatrix& A_SS)
+bool fracessa_v2::find_candidate_double_optimized(DoubleMatrix& A_SS)
 {
     // Note: Principal submatrices of circulant matrices are NOT necessarily circulant,
     // so we cannot use FFT solver here. We always use LDLT for principal submatrices.
@@ -217,7 +143,7 @@ bool fracessa::find_candidate_double_optimized(DoubleMatrix& A_SS)
     return true;
 }
 
-bool fracessa::find_candidate_double(DoubleMatrix& A, DoubleVector& b)
+bool fracessa_v2::find_candidate_double(DoubleMatrix& A, DoubleVector& b)
 {
     Eigen::PartialPivLU<DoubleMatrix> lu(A);
     
@@ -245,7 +171,7 @@ bool fracessa::find_candidate_double(DoubleMatrix& A, DoubleVector& b)
 }
 
 
-bool fracessa::find_candidate_rational_optimized(RationalMatrix& A_SS)
+bool fracessa_v2::find_candidate_rational_optimized(RationalMatrix& A_SS)
 {
     // Use BareissLU to solve A_{S,S} * v = 1_k (A_SS is symmetric)
     rational_linalg::BareissGauss<rational> bareiss(A_SS);
@@ -303,7 +229,7 @@ bool fracessa::find_candidate_rational_optimized(RationalMatrix& A_SS)
     return true;
 }
 
-bool fracessa::find_candidate_rational(RationalMatrix& A, RationalVector& b)
+bool fracessa_v2::find_candidate_rational(RationalMatrix& A, RationalVector& b)
 {
     // Use BareissLU solver (fraction-free for exact arithmetic)
     rational_linalg::BareissGauss<rational> bareiss(A);

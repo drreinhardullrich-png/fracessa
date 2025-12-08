@@ -11,6 +11,7 @@
 #include <fracessa/rational.hpp>
 #include <fracessa/candidate.hpp>
 #include <fracessa/bitset64.hpp>
+#include <fracessa/supports.hpp>
 #include <Eigen/Dense>
 #include <boost/math/special_functions/binomial.hpp>
 #include <boost/integer/common_factor.hpp>
@@ -24,13 +25,13 @@ using RationalMatrix = rational_linalg::Matrix<rational>;
 using RationalVector = rational_linalg::Matrix<rational>;  // Column vector: Matrix<rational>(n, 1)
 
 // Named constants
-static constexpr size_t CANDIDATE_RESERVE_MULTIPLIER = 10;
+static constexpr size_t CANDIDATE_RESERVE_MULTIPLIER = 100;
 
-class fracessa
+class fracessa_v2
 {
     public:
 
-        fracessa(const RationalMatrix& matrix, bool is_cs, bool with_candidates = false, bool exact = false, bool full_support = false, bool with_log = false, int matrix_id = -1);
+        fracessa_v2(const RationalMatrix& matrix, bool is_cs, bool with_candidates = false, bool exact = false, bool full_support = false, bool with_log = false, int matrix_id = -1);
 
         size_t ess_count_ = 0;
         std::vector<candidate> candidates_;
@@ -53,13 +54,12 @@ class fracessa
         candidate c_;
 
         std::vector<bitset64> candidates_supports_;
-        std::vector< std::vector<bitset64>> supports_;
         std::vector<bool> coprime_sizes_;
+        Supports supports_;
 
         std::shared_ptr<spdlog::logger> logger_;
 
-        bool search_one_support(bitset64& support, size_t support_size, bool is_cs_and_coprime = false);
-        void search_support_size(size_t support_size);
+        void search_one_support(const bitset64& support, size_t support_size, bool is_cs_and_coprime = false);
         bool find_candidate_double_optimized(DoubleMatrix& A_SS);
         bool find_candidate_double(DoubleMatrix& A, DoubleVector& b);
         bool find_candidate_rational_optimized(RationalMatrix& A_SS);

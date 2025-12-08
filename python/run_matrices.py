@@ -530,6 +530,20 @@ def main():
     matrices.sort(key=lambda x: x.get('id', 0))
     print(f"Sorted matrices by ID: {[(m['id'], m['dimension']) for m in matrices[:5]]}...")
 
+    # Load baseline timings if available
+    baseline_timings = {}
+    if baseline_results_file.exists():
+        try:
+            with open(baseline_results_file, 'r') as f:
+                baseline_data = json.load(f)
+            baseline_results = baseline_data.get('results', [])
+            for result in baseline_results:
+                matrix_id = result.get('id')
+                if result.get('result', {}).get('success'):
+                    baseline_timings[matrix_id] = result['result'].get('timing', 0.0)
+        except Exception:
+            pass  # If baseline can't be loaded, just continue without it
+
     # Process matrices sequentially
     results = []
     all_candidates = []
@@ -551,6 +565,26 @@ def main():
             actual_ess = computation_result["ess_count"]
             timing = computation_result["timing"]
             status = f"✅ {actual_ess} ESS in {timing:.4f}s"
+            
+            # Add baseline comparison if available
+            if matrix_id in baseline_timings:
+                baseline_timing = baseline_timings[matrix_id]
+                difference = timing - baseline_timing
+                if baseline_timing > 0:
+                    percentage_change = ((timing - baseline_timing) / baseline_timing) * 100
+                    if difference > 0:
+                        diff_str = f"+{difference:.4f}"
+                        pct_str = f"+{percentage_change:.2f}%"
+                    elif difference < 0:
+                        diff_str = f"{difference:.4f}"
+                        pct_str = f"{percentage_change:.2f}%"
+                    else:
+                        diff_str = "0.0000"
+                        pct_str = "0.00%"
+                    status += f" (was {baseline_timing:.4f}s, {diff_str}s, {pct_str})"
+                else:
+                    status += f" (was {baseline_timing:.4f}s)"
+            
             if actual_ess != number_ess:
                 status += f" ⚠️ (expected {number_ess})"
             print(f"[{i+1}/{total_matrices}] Matrix ID {matrix_id} (dim {dimension}): {status}")
@@ -571,7 +605,6 @@ def main():
     all_candidates.sort(key=lambda x: (x['matrix_id'], x['candidate_id']))
 
     # Save JSON results (without candidates)
-    print(f"\nSaving results to {results_file}")
     with open(results_file, 'w') as f:
         json.dump({
             "metadata": {
@@ -593,7 +626,6 @@ def main():
         }, f, indent=2)
 
     # Save CSV with all candidates
-    print(f"Saving candidates to {candidates_file}")
     csv_columns = [
         "matrix_id", "candidate_id", "vector", "support", "support_size",
         "extended_support", "extended_support_size", "shift_reference",
@@ -610,9 +642,8 @@ def main():
                 row['vector'] = ','.join(str(v) for v in row['vector'])
             writer.writerow(row)
 
-    print("\nResults saved!")
-    print(f"  JSON: {results_file}")
-    print(f"  CSV:  {candidates_file}")
+    print(f"json saved: {results_file}")
+    print(f"csv saved: {candidates_file}")
     print(f"\nSummary: {successful} successful, {failed} failed out of {len(matrices)} matrices")
     print(f"Total candidates: {len(all_candidates)}")
     if failed > 0:
@@ -621,153 +652,82 @@ def main():
             if not result["result"]["success"]:
                 print(f"  ID {result['id']}: {result['result']['error']}")
 
-    # Compare ESS counts from JSON results
-    print("\n" + "="*60)
-    print("ESS COUNT VERIFICATION (from JSON results)")
-    print("="*60)
-    
+    # Compare ESS counts from JSON results and verify against baseline
     ess_count_comparison = compare_ess_counts(results, baseline_results_file)
+    verification = verify_against_baseline(all_candidates, baseline_candidates_file)
     
+    # Check ESS counts
+    ess_count_ok = False
     if ess_count_comparison["status"] == "SKIPPED":
-        print(f"⚠️  {ess_count_comparison['reason']}")
+        pass  # Skip silently
     elif ess_count_comparison["status"] == "ERROR":
-        print(f"❌ {ess_count_comparison['reason']}")
+        pass  # Skip silently
     else:
-        print(f"Baseline file: {baseline_results_file}")
-        print(f"Matrices compared: {ess_count_comparison['compared']}")
-        
         if ess_count_comparison['compared'] > 0:
             mismatches = ess_count_comparison.get('mismatches', [])
             if mismatches:
-                print(f"\n❌ ESS count mismatches found: {len(mismatches)}")
+                print(f"❌ ESS count mismatches found: {len(mismatches)}")
                 print(f"{'Matrix ID':<10} {'Dimension':<10} {'Baseline ESS':<15} {'Current ESS':<15}")
                 print("-" * 50)
                 for mismatch in sorted(mismatches, key=lambda x: x['matrix_id']):
                     print(f"{mismatch['matrix_id']:<10} {mismatch['dimension']:<10} {mismatch['baseline_ess']:<15} {mismatch['current_ess']:<15}")
             else:
-                print(f"\n✅ All ESS counts match baseline!")
+                ess_count_ok = True
     
-    print("="*60)
-
-    # Compare runtimes with baseline
-    print("\n" + "="*60)
-    print("RUNTIME COMPARISON")
-    print("="*60)
-    
-    runtime_comparison = compare_runtimes(results, baseline_results_file)
-    
-    if runtime_comparison["status"] == "SKIPPED":
-        print(f"⚠️  {runtime_comparison['reason']}")
-    elif runtime_comparison["status"] == "ERROR":
-        print(f"❌ {runtime_comparison['reason']}")
-    else:
-        print(f"Baseline file: {baseline_results_file}")
-        print(f"Matrices compared: {runtime_comparison['compared']}")
-        
-        if runtime_comparison['compared'] > 0:
-            # Sort details by matrix ID
-            sorted_details = sorted(runtime_comparison['details'], key=lambda x: x['matrix_id'])
-            
-            print(f"\nRuntime comparison (current - baseline, in seconds):")
-            print(f"{'Matrix ID':<10} {'Dimension':<10} {'Baseline (s)':<15} {'Current (s)':<15} {'Difference (s)':<15} {'Change %':<12}")
-            print("-" * 92)
-            
-            for detail in sorted_details:
-                matrix_id = detail['matrix_id']
-                dimension = detail['dimension']
-                baseline_timing = detail['baseline_timing']
-                current_timing = detail['current_timing']
-                difference = current_timing - baseline_timing
-                percentage_change = detail.get('percentage_change')
-                
-                # Format difference with sign (3-4 digits after decimal for milliseconds)
-                if difference > 0:
-                    diff_str = f"+{difference:.4f}"
-                elif difference < 0:
-                    diff_str = f"{difference:.4f}"
-                else:
-                    diff_str = "0.0000"
-                
-                # Format percentage change with sign
-                if percentage_change is None:
-                    pct_str = "N/A"
-                elif percentage_change == float('inf'):
-                    pct_str = "∞"
-                elif percentage_change > 0:
-                    pct_str = f"+{percentage_change:.2f}%"
-                elif percentage_change < 0:
-                    pct_str = f"{percentage_change:.2f}%"
-                else:
-                    pct_str = "0.00%"
-                
-                print(f"{matrix_id:<10} {dimension:<10} {baseline_timing:<15.4f} {current_timing:<15.4f} {diff_str:<15} {pct_str:<12}")
-    
-    print("="*60)
-    
-    # Verify against baseline
-    print("\n" + "="*60)
-    print("BASELINE VERIFICATION")
-    print("="*60)
-    
-    verification = verify_against_baseline(all_candidates, baseline_candidates_file)
-    
+    # Check candidates
+    candidates_ok = False
     if verification["status"] == "SKIPPED":
-        print(f"⚠️  {verification['reason']}")
+        pass  # Skip silently
+    elif verification["status"] == "ERROR":
+        pass  # Skip silently
     else:
-        print(f"Baseline file: {baseline_candidates_file}")
-        print(f"Total candidates produced: {len(all_candidates)}")
-        print(f"Matrices verified: {verification['verified']}")
-        print(f"Passed: {verification['passed']}")
-        print(f"Failed: {verification['failed']}")
-        
-        # Show skipped matrices (in baseline but not in testset)
-        if verification["skipped"]:
-            print(f"\nℹ️  Skipped (not in testset): {len(verification['skipped'])} matrices")
-            if len(verification['skipped']) > 0 and len(verification['skipped']) <= 10:
-                print(f"  Matrix IDs: {verification['skipped']}")
-            elif len(verification['skipped']) > 10:
-                print(f"  Matrix IDs: {verification['skipped'][:10]}... (and {len(verification['skipped']) - 10} more)")
-            
-            # If all matrices are skipped, it might mean no candidates were produced
-            if len(verification['skipped']) == len([m for m in data.get('matrices', []) if m.get('in_use', True)]):
-                print(f"\n⚠️  WARNING: All matrices were skipped. This usually means:")
-                print(f"    - No candidates were produced (all runs failed or returned 0 candidates)")
-                print(f"    - Or matrix_id field is missing/incorrect in produced candidates")
-        
         if verification["status"] == "PASS":
-            print(f"\n✅ VERIFICATION PASSED - All candidates match baseline!")
-        else:
-            print(f"\n❌ VERIFICATION FAILED:")
-            
+            candidates_ok = True
+        elif verification["status"] == "FAIL":
+            print(f"❌ Candidate verification failed: {verification['failed']} mismatches")
             # Show errors (matrices not in baseline)
-            if verification["errors"]:
+            if verification.get("errors"):
                 print("\n  Matrices not in baseline (ERROR):")
                 for error in verification["errors"]:
                     print(f"    Matrix ID {error['matrix_id']}: {error['error']}")
             
             # Show candidate count mismatches
-            if verification["candidate_count_mismatches"]:
+            if verification.get("candidate_count_mismatches"):
                 print("\n  Candidate count mismatches:")
                 for mismatch in verification["candidate_count_mismatches"]:
                     print(f"    Matrix ID {mismatch['matrix_id']}: "
                           f"produced {mismatch['produced_count']}, baseline {mismatch['baseline_count']}")
             
             # Show ESS count mismatches
-            if verification["ess_count_mismatches"]:
+            if verification.get("ess_count_mismatches"):
                 print("\n  ESS count mismatches:")
                 for mismatch in verification["ess_count_mismatches"]:
                     print(f"    Matrix ID {mismatch['matrix_id']}: "
                           f"produced {mismatch['produced_ess_count']} ESS, baseline {mismatch['baseline_ess_count']} ESS")
             
             # Show candidate set mismatches
-            if verification["mismatches"]:
+            if verification.get("mismatches"):
                 print("\n  Candidate set mismatches (excluding reason_ess/stability):")
                 for mismatch in verification["mismatches"]:
                     print(f"    Matrix ID {mismatch['matrix_id']}: "
                           f"produced {mismatch['produced_count']}, baseline {mismatch['baseline_count']} "
                           f"(+{mismatch['extra_count']} extra, -{mismatch['missing_count']} missing)")
     
-    print("="*60)
+    # Show single checkmark if both passed
+    if ess_count_ok and candidates_ok:
+        print(f"\n✅ VERIFICATION PASSED - All ESS counts and all candidates match baseline!")
+    elif not ess_count_ok and not candidates_ok:
+        print(f"\n❌ VERIFICATION FAILED - ESS counts and/or candidates do not match baseline")
+    elif not ess_count_ok:
+        print(f"\n❌ VERIFICATION FAILED - ESS counts do not match baseline")
+    elif not candidates_ok:
+        print(f"\n❌ VERIFICATION FAILED - Candidates do not match baseline")
+    else:
+        # Handle case where verification was skipped or had errors
+        if ess_count_comparison["status"] == "SKIPPED" or verification["status"] == "SKIPPED":
+            print(f"\n⚠️  VERIFICATION SKIPPED - Baseline files not found or unavailable")
+        else:
+            print(f"\n❌ VERIFICATION FAILED - Unknown error")
 
 
 if __name__ == "__main__":

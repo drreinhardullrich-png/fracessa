@@ -76,7 +76,6 @@ old_code_backup.tar.gz
 
 # CMake FetchContent downloads (now in third_party/)
 third_party/
-.deps/
 
 # Third-party archives
 *.tar.gz
