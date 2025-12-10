@@ -1,9 +1,13 @@
 #ifndef RATIONAL_LINALG_MATRIX_HPP
 #define RATIONAL_LINALG_MATRIX_HPP
 
-#include <fracessa/rational.hpp>
+#include <rational_linalg/types_rational.hpp>
+#include <fracessa/bitset64.hpp>
 #include <vector>
 #include <cstring>
+#include <sstream>
+#include <string>
+#include <type_traits>
 
 namespace rational_linalg {
 
@@ -363,6 +367,17 @@ public:
         // Constructor already zero-initializes
         return result;
     }
+    
+    // Dot product (for column vectors)
+    inline T dot(const Matrix& other) const {
+        // Assume both are column vectors (cols_ == 1)
+        T result = T(0);
+        const size_t n = (rows_ < other.rows_) ? rows_ : other.rows_;
+        for (size_t i = 0; i < n; ++i) {
+            result += data_[i * cols_] * other.data_[i * other.cols_];
+        }
+        return result;
+    }
 
 private:
     size_t rows_;
@@ -429,9 +444,137 @@ inline Matrix<T> operator*(const T& scalar, const Matrix<T>& m) {
     return m * scalar;  // Scalar multiplication is commutative
 }
 
-// Type aliases for convenience
-using RationalMatrix = Matrix<rational>;
-using SmallRationalMatrix = Matrix<small_rational>;
+
+// Convert Matrix<T> to Matrix<double>
+template<typename T>
+inline Matrix<double> convert_t_to_double(const Matrix<T>& A)
+{
+    Matrix<double> result(A.rows(), A.cols());
+    for (size_t i = 0; i < A.rows(); ++i) {
+        for (size_t j = 0; j < A.cols(); ++j) {
+            result(i, j) = rational_to_double(A(i, j));
+        }
+    }
+    return result;
+}
+
+// Convert Matrix<small_rational> to Matrix<rational>
+inline Matrix<rational> convert_small_to_rational(const Matrix<small_rational>& A)
+{
+    Matrix<rational> result(A.rows(), A.cols());
+    for (size_t i = 0; i < A.rows(); ++i) {
+        for (size_t j = 0; j < A.cols(); ++j) {
+            // Convert small_rational to rational
+            small_rational val = A(i, j);
+            int64_t num = static_cast<int64_t>(val.numerator());
+            int64_t den = static_cast<int64_t>(val.denominator());
+            result(i, j) = rational(num) / rational(den);
+        }
+    }
+    return result;
+}
+
+// String representation
+template<typename T>
+inline std::string matrix_to_log(const Matrix<T>& A)
+{
+    std::ostringstream oss;
+    for (size_t i = 0; i < A.rows(); ++i) {
+        oss << "\t\t\t";  // Add tabs before each line
+        for (size_t j = 0; j < A.cols(); ++j) {
+            oss << A(i, j) << ",";
+        }
+        if (i < A.rows() - 1) {
+            oss << std::endl;
+        }
+    }
+    return oss.str();
+}
+
+// Specialized string representation for Matrix<small_rational>
+// Uses to_string overload for boost::rational which handles denominator==1 logic
+template<>
+inline std::string matrix_to_log(const Matrix<small_rational>& A)
+{
+    std::ostringstream oss;
+    for (size_t i = 0; i < A.rows(); ++i) {
+        oss << "\t\t\t";  // Add tabs before each line
+        for (size_t j = 0; j < A.cols(); ++j) {
+            oss << to_string(A(i, j)) << ",";
+        }
+        if (i < A.rows() - 1) {
+            oss << std::endl;
+        }
+    }
+    return oss.str();
+}
+
+// Extract principal submatrix from matrix using bitset64 mask
+// Optimized: only iterates over SET bits using for_each_set_bit_no_exit for better performance
+// NOTE: submatrix must already be correctly sized (support_size x support_size) before calling!
+template<typename T>
+inline void principal_submatrix(const Matrix<T>& A, size_t /*dimension*/, const bitset64& support, size_t /*support_size*/, Matrix<T>& submatrix)
+{
+    // Only iterate over SET bits for efficiency
+    size_t row = 0;
+    support.for_each_set_bit_no_exit([&](unsigned i) {
+        size_t col = 0;
+        support.for_each_set_bit_no_exit([&](unsigned j) {
+            submatrix(row, col) = A(static_cast<size_t>(i), static_cast<size_t>(j));
+            ++col;
+        });
+        ++row;
+    });
+}
+
+// Check if matrix is positive definite (LDLT decomposition for rational)
+template<typename T>
+inline bool is_positive_definite_rational(const Matrix<T>& A)
+{
+    // LDLT decomposition for rational numbers
+    size_t n = A.rows();
+    Matrix<T> D(n, n);
+    Matrix<T> L(n, n);
+    
+    // Initialize L as identity
+    for (size_t i = 0; i < n; ++i) {
+        for (size_t j = 0; j < n; ++j) {
+            L(i, j) = (i == j) ? T(1) : T(0);
+        }
+    }
+
+    for (size_t i = 0; i < n; ++i) {
+        for (size_t j = 0; j < i; ++j) {
+            T aSum = T(0);
+            for (size_t k = 0; k < j; ++k) {
+                aSum += L(i, k) * L(j, k) * D(k, k);
+            }
+            L(i, j) = (T(1) / D(j, j)) * (A(i, j) - aSum);
+        }
+        T bSum = T(0);
+        for (size_t k = 0; k < i; ++k) {
+            bSum += L(i, k) * L(i, k) * D(k, k);
+        }
+        D(i, i) = A(i, i) - bSum;
+        if (D(i, i) <= T(0)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// Check if all entries of a matrix are greater than zero
+template<typename T>
+inline bool all_entries_greater_zero(const Matrix<T>& A) {
+    for (size_t i = 0; i < A.rows(); ++i) {
+        for (size_t j = 0; j < A.cols(); ++j) {
+            if (A(i, j) <= T(0)) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
 
 } // namespace rational_linalg
 

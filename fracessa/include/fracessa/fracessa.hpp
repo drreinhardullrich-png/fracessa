@@ -1,45 +1,40 @@
 // Migrated header for modern include path
 #include <vector>
 #include <string>
-#include <bitset>
 #include <memory>
 
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/rotating_file_sink.h>
 
 #include <rational_linalg/matrix.hpp>
-#include <fracessa/rational.hpp>
+#include <rational_linalg/types_rational.hpp>
 #include <fracessa/candidate.hpp>
 #include <fracessa/bitset64.hpp>
 #include <fracessa/supports.hpp>
-#include <Eigen/Dense>
 #include <boost/math/special_functions/binomial.hpp>
 #include <boost/integer/common_factor.hpp>
 
-// Type aliases for Eigen double matrices (still used for double operations)
-using DoubleMatrix = Eigen::MatrixXd;
-using DoubleVector = Eigen::VectorXd;
-
-// Type aliases for rational matrices
-using RationalMatrix = rational_linalg::Matrix<rational>;
-using RationalVector = rational_linalg::Matrix<rational>;  // Column vector: Matrix<rational>(n, 1)
-
-// Named constants
-static constexpr size_t CANDIDATE_RESERVE_MULTIPLIER = 100;
 
 class fracessa
 {
     public:
 
-        fracessa(const RationalMatrix& matrix, bool is_cs, bool with_candidates = false, bool exact = false, bool full_support = false, bool with_log = false, int matrix_id = -1);
+        fracessa(const rational_linalg::Matrix<small_rational>& matrix, bool is_cs, bool with_candidates = false, bool exact = false, bool full_support = false, bool with_log = false, int matrix_id = -1);
 
         size_t ess_count_ = 0;
         std::vector<candidate> candidates_;
 
     private:
 
-        RationalMatrix game_matrix_;
-        DoubleMatrix game_matrix_double_;
+        rational_linalg::Matrix<small_rational> game_small_;
+        rational_linalg::Matrix<rational> game_rational_;  // Converted to arbitrary precision when overflow occurs
+        rational_linalg::Matrix<double> game_double_;
+        rational_linalg::Matrix<double> subgame_augmented_double_;      // Augmented matrix [A|b] of size (n x n+1)
+        rational_linalg::Matrix<small_rational> subgame_augmented_small_;  // Augmented matrix [A|b] of size (n x n+1)
+        rational_linalg::Matrix<rational> subgame_augmented_rational_;     // Augmented matrix [A|b] of size (n x n+1)
+        rational_linalg::Matrix<small_rational> bee_small_;  // Matrix for copositivity check (small_rational)
+        rational_linalg::Matrix<rational> bee_rational_;     // Matrix for copositivity check (rational)
+        bool use_small_ = true;  // Flag to track if we're using small_rational (true) or rational (false)
 
         size_t dimension_;
         bool is_cs_;
@@ -51,27 +46,23 @@ class fracessa
         bool conf_with_log_;
 
         
-        candidate c_;
+        candidate candidate_;
 
-        std::vector<bitset64> candidates_supports_;
-        std::vector<bool> coprime_sizes_;
         Supports supports_;
 
         std::shared_ptr<spdlog::logger> logger_;
 
         void search_one_support(const bitset64& support, size_t support_size, bool is_cs_and_coprime = false);
-        bool find_candidate_double_optimized(DoubleMatrix& A_SS);
-        bool find_candidate_double(DoubleMatrix& A, DoubleVector& b);
-        bool find_candidate_rational_optimized(RationalMatrix& A_SS);
-        bool find_candidate_rational(RationalMatrix& A, RationalVector& b);
-        void check_stability();
+        // COMMENTED OUT: Optimized and find_candidate functions
+        // bool find_candidate_double_optimized(rational_linalg::Matrix<double>& A_SS);
         
-        // Helper functions to build full solution vector from support
-        bool build_solution_vector(const DoubleVector& solution, DoubleVector& solution_full_n);
-        bool build_solution_vector(const RationalVector& solution, RationalVector& solution_full_n);
+        // Templated function for all types (double, small_rational, rational)
+        template<typename T>
+        bool find_candidate(const rational_linalg::Matrix<T>& game_matrix, const bitset64& support, size_t support_size, rational_linalg::Matrix<T>& Ab);
         
-        // Helper functions to check constraints p'Ap<=v for rows not in support
-        bool check_constraints(const DoubleVector& solution, const DoubleVector& solution_full_n);
-        bool check_constraints(const RationalVector& solution, const RationalVector& solution_full_n, bitset64& extended_support);
+        // Templated check_stability function for both rational and small_rational
+        template<typename T>
+        void check_stability(const rational_linalg::Matrix<T>& game_matrix, rational_linalg::Matrix<T>& Bee);
+
 };
 

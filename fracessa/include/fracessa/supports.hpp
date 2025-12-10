@@ -1,9 +1,8 @@
 // supports.hpp
 #pragma once
-#include <sys/types.h>
+#include <cstddef>
 #include <vector>
 #include <algorithm>
-#include <cstddef>
 #include <fracessa/bitset64.hpp>
 #include <boost/math/special_functions/binomial.hpp>
 
@@ -44,7 +43,8 @@ public:
         
         // Populate supports based on is_cs_ flag
         if (is_cs_) {
-            bitset64::iterate_all_supports(dimension_, [&](const bitset64& support) {
+            for (uint64_t bits = 1ULL; bits < (1ULL << dimension_); ++bits) {
+                bitset64 support(bits);
                 size_t current_index = support.count() - 1;
                 if (is_coprime[current_index]) {
                     // Only add if it's the smallest representation (canonical form)
@@ -54,11 +54,12 @@ public:
                 } else {
                     supports_[current_index].push_back(support);
                 }
-            });
+            }
         } else {
-            bitset64::iterate_all_supports(dimension_, [&](const bitset64& support) {
+            for (uint64_t bits = 1ULL; bits < (1ULL << dimension_); ++bits) {
+                bitset64 support(bits);
                 supports_[support.count() - 1].push_back(support);
-            });
+            }
         }
     }
     
@@ -75,14 +76,23 @@ public:
             support_size = subset.count();
         }
         for (size_t i = support_size; i < dimension_; ++i) { //index support_size means erase from support_size+1 on!!!
-            supports_[i].erase(
+            auto& vec = supports_[i];
+            // Binary search: find first element where x > subset (only for dimension >= 10)
+            // this is an educated guess. for dimensions the overhead of the binary search is bigger than the time saved
+            auto start_it = (dimension_ >= 10) 
+                ? std::upper_bound(vec.begin(), vec.end(), subset)
+                : vec.begin();
+            // Only check elements from start_it onwards
+            if (start_it != vec.end()) {
+                vec.erase(
                 std::remove_if(
-                    supports_[i].begin(),
-                    supports_[i].end(),
+                        start_it,
+                        vec.end(),
                     [=](const bitset64& x) { return subset.is_subset_of(x); }
                 ),
-                supports_[i].end()
+                    vec.end()
             );
+            }
         }
     }
     

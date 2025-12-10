@@ -564,7 +564,7 @@ def main():
         if computation_result["success"]:
             actual_ess = computation_result["ess_count"]
             timing = computation_result["timing"]
-            status = f"✅ {actual_ess} ESS in {timing:.4f}s"
+            status = f"✅ {actual_ess} ESS in {timing:.6f}s"
             
             # Add baseline comparison if available
             if matrix_id in baseline_timings:
@@ -573,17 +573,17 @@ def main():
                 if baseline_timing > 0:
                     percentage_change = ((timing - baseline_timing) / baseline_timing) * 100
                     if difference > 0:
-                        diff_str = f"+{difference:.4f}"
+                        diff_str = f"+{difference:.6f}"
                         pct_str = f"+{percentage_change:.2f}%"
                     elif difference < 0:
-                        diff_str = f"{difference:.4f}"
+                        diff_str = f"{difference:.6f}"
                         pct_str = f"{percentage_change:.2f}%"
                     else:
-                        diff_str = "0.0000"
+                        diff_str = "0.000000"
                         pct_str = "0.00%"
-                    status += f" (was {baseline_timing:.4f}s, {diff_str}s, {pct_str})"
+                    status += f" (was {baseline_timing:.6f}s, {diff_str}s, {pct_str})"
                 else:
-                    status += f" (was {baseline_timing:.4f}s)"
+                    status += f" (was {baseline_timing:.6f}s)"
             
             if actual_ess != number_ess:
                 status += f" ⚠️ (expected {number_ess})"

@@ -108,13 +108,6 @@ endif()
 set(FETCHCONTENT_BASE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party CACHE PATH "Directory for FetchContent downloads")
 include(FetchContent)
 
-# Fetch Eigen
-FetchContent_Declare(
-    Eigen3
-    GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
-    GIT_TAG        3.4.0
-)
-
 # Fetch spdlog
 FetchContent_Declare(
     spdlog
@@ -214,7 +207,6 @@ FetchContent_Declare(
 
 # Make all dependencies available (core dependencies first)
 FetchContent_MakeAvailable(
-    Eigen3 
     spdlog 
     argparse 
     boost_config
@@ -233,16 +225,71 @@ FetchContent_MakeAvailable(
 message(STATUS "Using Boost 1.89.0 headers (from FetchContent)")
     set(BOOST_LOCAL_FOUND TRUE)
 
-# Use Boost multiprecision cpp_rational backend (pure C++, no external dependencies)
-message(STATUS "Using cpp_rational backend (pure C++, no dependencies)")
+# Find GMP library for arbitrary precision rational numbers
+# Try pkg-config first, then fall back to find_library
+find_package(PkgConfig QUIET)
+if(PkgConfig_FOUND)
+    pkg_check_modules(GMP QUIET gmp)
+    # Also find gmpxx (C++ wrapper) which is needed for stream operators
+    find_library(GMPXX_LIBRARIES
+        NAMES gmpxx
+        PATHS
+        /usr/lib
+        /usr/lib/x86_64-linux-gnu
+        /usr/local/lib
+        /opt/local/lib
+    )
+    if(GMP_FOUND AND GMPXX_LIBRARIES)
+        set(GMP_LIBRARIES ${GMP_LIBRARIES} ${GMPXX_LIBRARIES})
+    endif()
+endif()
+
+if(NOT GMP_FOUND)
+    # Fall back to manual search
+    find_path(GMP_INCLUDE_DIR NAMES gmpxx.h
+        PATHS
+        /usr/include
+        /usr/local/include
+        /opt/local/lib
+    )
+    
+    find_library(GMP_LIBRARIES
+        NAMES gmp
+        PATHS
+        /usr/lib
+        /usr/lib/x86_64-linux-gnu
+        /usr/local/lib
+        /opt/local/lib
+    )
+    
+    find_library(GMPXX_LIBRARIES
+        NAMES gmpxx
+        PATHS
+        /usr/lib
+        /usr/lib/x86_64-linux-gnu
+        /usr/local/lib
+        /opt/local/lib
+    )
+    
+    if(GMP_INCLUDE_DIR AND GMP_LIBRARIES AND GMPXX_LIBRARIES)
+        set(GMP_FOUND TRUE)
+        set(GMP_LIBRARIES ${GMP_LIBRARIES} ${GMPXX_LIBRARIES})
+    endif()
+endif()
+
+if(GMP_FOUND)
+    message(STATUS "Found GMP: ${GMP_LIBRARIES}")
+    message(STATUS "GMP include dir: ${GMP_INCLUDE_DIR}")
+    message(STATUS "Using GMP mpq_class backend for arbitrary precision rational numbers")
+else()
+    message(FATAL_ERROR "GMP library not found. Please install GMP: sudo apt-get install libgmp-dev libgmpxx4ldbl (or libgmpxx-dev)")
+endif()
 
 # Build the core library
 add_library(fracessa_lib
     src/fracessa.cpp
     src/findeq.cpp
     src/checkstab.cpp
-    src/findeq_v2.cpp
-    src/checkstab_v2.cpp
 )
 
 # Set library properties
@@ -258,7 +305,6 @@ target_include_directories(fracessa_lib
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/fracessa>
         $<BUILD_INTERFACE:${argparse_SOURCE_DIR}/include>
         $<BUILD_INTERFACE:${spdlog_SOURCE_DIR}/include>
-        $<BUILD_INTERFACE:${Eigen3_SOURCE_DIR}>
         # Boost libraries (individual repos, core dependencies first)
         $<BUILD_INTERFACE:${boost_config_SOURCE_DIR}/include>
         $<BUILD_INTERFACE:${boost_predef_SOURCE_DIR}/include>
@@ -271,11 +317,13 @@ target_include_directories(fracessa_lib
         $<BUILD_INTERFACE:${boost_math_SOURCE_DIR}/include>
         $<BUILD_INTERFACE:${boost_integer_SOURCE_DIR}/include>
         $<BUILD_INTERFACE:${boost_algorithm_SOURCE_DIR}/include>
+        ${GMP_INCLUDE_DIR}
     PRIVATE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
 )
 
-# No external libraries needed - using pure C++ Boost multiprecision
+# Link GMP library
+target_link_libraries(fracessa_lib PRIVATE ${GMP_LIBRARIES})
 
 # Platform-specific configuration
 if(UNIX AND NOT APPLE)
@@ -287,8 +335,9 @@ if(UNIX AND NOT APPLE)
     target_include_directories(fracessa PRIVATE 
         ${argparse_SOURCE_DIR}/include
         ${boost_math_SOURCE_DIR}/include
+        ${GMP_INCLUDE_DIR}
     )
-    target_link_libraries(fracessa PRIVATE fracessa_lib)
+    target_link_libraries(fracessa PRIVATE fracessa_lib ${GMP_LIBRARIES})
 
     # Install targets
     install(TARGETS fracessa fracessa_lib
@@ -309,8 +358,9 @@ elseif(WIN32 OR MSVC OR MSYS OR MINGW)
     target_include_directories(fracessa PRIVATE 
         ${argparse_SOURCE_DIR}/include
         ${boost_math_SOURCE_DIR}/include
+        ${GMP_INCLUDE_DIR}
     )
-    target_link_libraries(fracessa PRIVATE fracessa_lib)
+    target_link_libraries(fracessa PRIVATE fracessa_lib ${GMP_LIBRARIES})
 
     # Install targets
     install(TARGETS fracessa

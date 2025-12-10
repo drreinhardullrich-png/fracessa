@@ -1,9 +1,10 @@
 #include <fracessa/fracessa.hpp>
 #include <fracessa/bitset64.hpp>
-#include <rational_linalg/matrix_ops.hpp>
+#include <rational_linalg/matrix.hpp>
+#include <exception>
 
-fracessa::fracessa(const RationalMatrix& matrix, bool is_cs, bool with_candidates, bool exact, bool full_support, bool with_log, int matrix_id)
-    : game_matrix_(matrix)
+fracessa::fracessa(const rational_linalg::Matrix<small_rational>& matrix, bool is_cs, bool with_candidates, bool exact, bool full_support, bool with_log, int matrix_id)
+    : game_small_(matrix)
     , dimension_(matrix.rows())
     , is_cs_(is_cs)
     , matrix_id_(matrix_id)
@@ -11,17 +12,16 @@ fracessa::fracessa(const RationalMatrix& matrix, bool is_cs, bool with_candidate
     , conf_exact_(exact)
     , conf_full_support_(full_support)
     , conf_with_log_(with_log)
-    , c_()
-    , candidates_supports_()
+    , candidate_()
     , supports_(dimension_, is_cs_)
     , logger_()
 {
 
     if (!conf_exact_)
-        game_matrix_double_ = rational_linalg::to_double(game_matrix_);
+        game_double_ = rational_linalg::convert_t_to_double(game_small_);
 
     if (conf_with_candidates_)
-        candidates_.reserve(CANDIDATE_RESERVE_MULTIPLIER * dimension_);
+        candidates_.reserve(250 * dimension_);
 
     if (conf_with_log_) {
         auto rotating_sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
@@ -41,7 +41,7 @@ fracessa::fracessa(const RationalMatrix& matrix, bool is_cs, bool with_candidate
         }
         
         logger_->info("n={}", dimension_);
-        logger_->info("game matrix:\n{}", rational_linalg::to_string(game_matrix_));
+        logger_->info("game matrix:\n{}", rational_linalg::matrix_to_log(game_small_));
     }
         
     // Initialize supports
@@ -57,13 +57,10 @@ fracessa::fracessa(const RationalMatrix& matrix, bool is_cs, bool with_candidate
     }
     // Search all support sizes
     for (size_t i = 1; i <= (conf_full_support_ ? dimension_-1: dimension_) ; i++) {
-        if (conf_with_log_ && logger_)
+        if (conf_with_log_)
             logger_->info("Searching support size {}:", i);
 
-        bool is_cs_and_coprime = false;
-        if (is_cs_) {
-            is_cs_and_coprime = (boost::integer::gcd(i, dimension_) == 1) && is_cs_;
-        }
+        const bool is_cs_and_coprime = is_cs_ && (boost::integer::gcd(i, dimension_) == 1);
         for (const auto& support : supports_.get_supports(i)) {
             search_one_support(support, i, is_cs_and_coprime);
         }
@@ -73,103 +70,105 @@ fracessa::fracessa(const RationalMatrix& matrix, bool is_cs, bool with_candidate
 
 void fracessa::search_one_support(const bitset64& support, size_t support_size, bool is_cs_and_coprime)
 {
-    c_.support_size = support_size;
-    c_.support = support;
-
-    // Initialize matrices once per support for reuse
-    DoubleMatrix A_double;
-    DoubleVector b_double;
-    DoubleMatrix A_SS;  // Principal submatrix for optimized path (double)
-    RationalMatrix A_rational;
-    RationalMatrix A_SS_rational;  // Principal submatrix for optimized path (rational)
-    RationalVector b_rational;
-    if (!conf_exact_) {
-        matrix_ops::get_kkt_rhs(support_size, b_double);
-    }
-    rational_linalg::get_kkt_rhs(support_size, b_rational);
-
-    if (!conf_exact_) {
-        // Extract principal submatrix A_{S,S} for optimized path
-        // matrix_ops::principal_submatrix(game_matrix_double_, dimension_, c_.support, c_.support_size, A_SS);
-        
-        // Try optimized block inversion approach first
-        // bool optimized_success = find_candidate_double_optimized(A_SS);
-        
-        // if (!optimized_success) {
-            // Fall back to standard method if matrix is indefinite
-            matrix_ops::get_kkt_bordering(game_matrix_double_, c_.support, c_.support_size, A_double);
-            if (!find_candidate_double(A_double, b_double))
+    if (!conf_exact_) 
+            if (!find_candidate<double>(game_double_, support, support_size, subgame_augmented_double_))
                 return;
-        // }
+
+    if (use_small_) {
+        // Use small_rational (fast path)
+        try {
+            if (!find_candidate<small_rational>(game_small_, support, support_size, subgame_augmented_small_))
+                return;
+        } catch (const std::exception& e) {
+            // Check if it's an overflow error
+            std::string error_msg = e.what();
+            if (error_msg.find("overflow") != std::string::npos) {
+                game_rational_ = rational_linalg::convert_small_to_rational(game_small_);
+                use_small_ = false;
+                if (!find_candidate<rational>(game_rational_, support, support_size, subgame_augmented_rational_))
+                    return;
+            } else {              
+                throw;  // Re-throw if it's not an overflow error
+            }
+        }
+    } else {
+        if (!find_candidate<rational>(game_rational_, support, support_size, subgame_augmented_rational_))
+            return;
     }
 
-    // Extract principal submatrix A_{S,S} for optimized path (rational)
-    // rational_linalg::principal_submatrix(game_matrix_, dimension_, c_.support, c_.support_size, A_SS_rational);
+    candidate_.support_size = support_size;
+    candidate_.support = support;
+    candidate_.candidate_id++;
     
-    // Try optimized block inversion approach first
-    // bool optimized_success = find_candidate_rational_optimized(A_SS_rational);
-    
-    // if (!optimized_success) {
-        // Fall back to standard method if matrix is singular
-        rational_linalg::get_kkt_bordering(game_matrix_, c_.support, c_.support_size, A_rational);
-        if (!find_candidate_rational(A_rational, b_rational))
-            return;
-    // }
-
-    c_.candidate_id++;
-
-    if (conf_with_log_ && logger_)
+    if (conf_with_log_)
         logger_->info("Found candidate! Check stability:");
 
-    check_stability();
+    if (use_small_) {
+        try {
+            check_stability<small_rational>(game_small_, bee_small_);
+        } catch (const std::exception& e) {
+            // Check if it's an overflow error
+            std::string error_msg = e.what();
+            if (error_msg.find("overflow") != std::string::npos) {
+                game_rational_ = rational_linalg::convert_small_to_rational(game_small_);
+                use_small_ = false;
+                check_stability<rational>(game_rational_, bee_rational_);
+            } else {
+                // Re-throw if it's not an overflow error
+                throw;
+            }
+        }
+    } else {
+        check_stability<rational>(game_rational_, bee_rational_);
+    }
 
-    if (c_.is_ess)
+    if (candidate_.is_ess)
         ess_count_++;
 
     if (is_cs_and_coprime)
-        c_.shift_reference = c_.candidate_id;
+        candidate_.shift_reference = candidate_.candidate_id;
     else
-        c_.shift_reference = 0;
+        candidate_.shift_reference = 0;
 
     if (conf_with_candidates_)
-        candidates_.push_back(c_);
+        candidates_.push_back(candidate_);
 
-    if (conf_with_log_ && logger_) {
+    if (conf_with_log_) {
         logger_->info("{}", candidate::header());
-        logger_->info("{}", c_.to_string());
+        logger_->info("{}", candidate_.to_string());
     }
     // Remove all supersets for this support using Supports class
-    supports_.remove_supersets(c_.support, support_size);
+    supports_.remove_supersets(candidate_.support, support_size);
 
     if (is_cs_and_coprime) { //do the same for the n-1 more candidates we get for free because of the coprime property!
 
         for (size_t i = 0; i < dimension_ - 1; i++) {
 
-            c_.support.rot_one_right(dimension_);
+            candidate_.support.rot_one_right(dimension_);
 
-            c_.candidate_id++;
+            candidate_.candidate_id++;
 
-            if (c_.is_ess)
+            if (candidate_.is_ess)
                 ess_count_++;
 
             if (conf_with_candidates_) {
                 // Rotate vector: move first element to end
-                rational first = c_.vector(0, 0);
-                size_t vec_size = c_.vector.rows();
+                rational first = candidate_.vector(0, 0);
+                size_t vec_size = candidate_.vector.rows();
                 for (size_t j = 0; j < vec_size - 1; j++) {
-                    c_.vector(j, 0) = c_.vector(j + 1, 0);
+                    candidate_.vector(j, 0) = candidate_.vector(j + 1, 0);
                 }
-                c_.vector(vec_size - 1, 0) = first;
-                c_.extended_support.rot_one_right(dimension_);
-                candidates_.push_back(c_);
+                candidate_.vector(vec_size - 1, 0) = first;
+                candidate_.extended_support.rot_one_right(dimension_);
+                candidates_.push_back(candidate_);
 
-                if (conf_with_log_ && logger_) {
+                if (conf_with_log_) {
                     logger_->info("{}", candidate::header());
-                    logger_->info("{}", c_.to_string());
+                    logger_->info("{}", candidate_.to_string());
                 }
             }
             // Remove all supersets for shifted support using Supports class
-            supports_.remove_supersets(c_.support, support_size);
+            supports_.remove_supersets(candidate_.support, support_size);
         }
     }
 }

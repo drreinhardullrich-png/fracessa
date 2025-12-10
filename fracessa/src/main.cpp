@@ -1,16 +1,191 @@
 #include <iostream>
 #include <vector>
-#include <cassert>
 #include <string>
 #include <chrono>
 #include <iomanip>
 #include <cstdint>
 
 #include <fracessa/fracessa.hpp>
-#include <fracessa/rational.hpp>
+#include <rational_linalg/types_rational.hpp>
 #include <rational_linalg/matrix.hpp>
 #include <argparse/argparse.hpp>
-#include <boost/algorithm/string.hpp>
+
+// Helper function to parse matrix string format: "n#values"
+// Returns true on success, false on error
+bool parse_matrix_string(const std::string& matrix_str, rational_linalg::Matrix<small_rational>& A, bool& is_cs)
+{
+    // Parse CLI string format: "n#values" - optimized manual parsing
+    const size_t hash_pos = matrix_str.find('#');
+    if (hash_pos == std::string::npos || hash_pos == 0 || hash_pos == matrix_str.length() - 1) {
+        std::cerr << "Error: String for the matrix does not include '#' as a separator between dimension and matrix!" << std::endl;
+        return false;
+    }
+    
+    // Check for multiple '#' characters
+    if (matrix_str.find('#', hash_pos + 1) != std::string::npos) {
+        std::cerr << "Error: Multiple '#' characters found in matrix string!" << std::endl;
+        return false;
+    }
+    
+    size_t n;
+    try {
+        n = std::stoull(matrix_str.substr(0, hash_pos));
+    } catch (const std::exception& e) {
+        std::cerr << "Error: The given dimension could not be converted into an integer number!" << std::endl;
+        return false;
+    }
+    
+    // Parse comma-separated values - optimized manual parsing
+    const std::string& values_str = matrix_str.substr(hash_pos + 1);
+    std::vector<small_rational> rational_values;
+    
+    // Pre-allocate vector with estimated size (at least n/2 for circular symmetric)
+    rational_values.reserve(n / 2);
+    
+    try {
+        size_t start = 0;
+        size_t comma_pos;
+        
+        while (start < values_str.length()) {
+            comma_pos = values_str.find(',', start);
+            if (comma_pos == std::string::npos) {
+                comma_pos = values_str.length();
+            }
+            
+            // Parse value: "numerator/denominator" or just "numerator"
+            const size_t slash_pos = values_str.find('/', start);
+            if (slash_pos != std::string::npos && slash_pos < comma_pos) {
+                // Has denominator
+                int64_t num = std::stoll(values_str.substr(start, slash_pos - start));
+                int64_t den = std::stoll(values_str.substr(slash_pos + 1, comma_pos - slash_pos - 1));
+                rational_values.emplace_back(num, den);
+            } else {
+                // No denominator, treat as integer
+                int64_t num = std::stoll(values_str.substr(start, comma_pos - start));
+                rational_values.emplace_back(num, 1);
+            }
+            
+            start = comma_pos + 1;
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "Error: Could not convert matrix values to rational numbers!" << std::endl;
+        std::cerr << "  " << e.what() << std::endl;
+        return false;
+    }
+    
+    // Determine matrix type and create matrix
+    const size_t expected_cs = n / 2;
+    const size_t expected_sym = n * (n + 1) / 2;
+    const size_t actual_size = rational_values.size();
+    
+    if (actual_size == expected_cs) {
+        // Circular symmetric matrix
+        A = rational_linalg::create_circular_symmetric<small_rational>(n, rational_values);
+        is_cs = true;
+    } else if (actual_size == expected_sym) {
+        // Symmetric matrix (upper triangular)
+        A = rational_linalg::create_symmetric<small_rational>(n, rational_values);
+        is_cs = false;
+    } else {
+        std::cerr << "Error: The number of matrix-elements must either be floor(dimension/2) (for a circular symmetric matrix) or dimension*(dimension+1)/2 (for a symmetric matrix)!" << std::endl;
+        std::cerr << "  Got " << actual_size << " values, but expected " << expected_cs << " (circular symmetric) or " << expected_sym << " (symmetric)." << std::endl;
+        return false;
+    }
+    
+    return true;
+}
+
+// Unsafe version: parses matrix string without any safety checks for maximum performance
+// Assumes valid input format: "n#values" where values are comma-separated rationals
+void parse_matrix_string_unsafe(const std::string& matrix_str, rational_linalg::Matrix<small_rational>& A, bool& is_cs)
+{
+    // Find '#' by direct iteration
+    size_t hash_pos = 0;
+    while (matrix_str[hash_pos] != '#') {
+        ++hash_pos;
+    }
+    
+    // Parse dimension n manually (no stoull, no substr)
+    size_t n = 0;
+    for (size_t i = 0; i < hash_pos; ++i) {
+        n = n * 10 + (matrix_str[i] - '0');
+    }
+    
+    // Pre-allocate vector with estimated size
+    std::vector<small_rational> rational_values;
+    rational_values.reserve(n / 2);
+    
+    // Parse values by direct character iteration
+    size_t pos = hash_pos + 1;
+    const size_t len = matrix_str.length();
+    
+    while (pos < len) {
+        // Parse numerator
+        int64_t num = 0;
+        bool num_negative = false;
+        
+        if (matrix_str[pos] == '-') {
+            num_negative = true;
+            ++pos;
+        }
+        
+        while (pos < len && matrix_str[pos] != '/' && matrix_str[pos] != ',') {
+            num = num * 10 + (matrix_str[pos] - '0');
+            ++pos;
+        }
+        
+        if (num_negative) {
+            num = -num;
+        }
+        
+        // Check if there's a denominator
+        if (pos < len && matrix_str[pos] == '/') {
+            ++pos; // skip '/'
+            
+            // Parse denominator
+            int64_t den = 0;
+            bool den_negative = false;
+            
+            if (matrix_str[pos] == '-') {
+                den_negative = true;
+                ++pos;
+            }
+            
+            while (pos < len && matrix_str[pos] != ',') {
+                den = den * 10 + (matrix_str[pos] - '0');
+                ++pos;
+            }
+            
+            if (den_negative) {
+                den = -den;
+            }
+            
+            rational_values.emplace_back(num, den);
+        } else {
+            // No denominator, treat as integer
+            rational_values.emplace_back(num, 1);
+        }
+        
+        // Skip comma if present
+        if (pos < len && matrix_str[pos] == ',') {
+            ++pos;
+        }
+    }
+    
+    // Determine matrix type and create matrix
+    const size_t expected_cs = n / 2;
+    const size_t actual_size = rational_values.size();
+    
+    if (actual_size == expected_cs) {
+        // Circular symmetric matrix
+        A = rational_linalg::create_circular_symmetric<small_rational>(n, rational_values);
+        is_cs = true;
+    } else {
+        // Symmetric matrix (upper triangular)
+        A = rational_linalg::create_symmetric<small_rational>(n, rational_values);
+        is_cs = false;
+    }
+}
 
 int main(int argc, char *argv[])
 {
@@ -48,6 +223,11 @@ int main(int argc, char *argv[])
         .scan<'i', int>()
         .default_value(-1);
 
+    program.add_argument("-u", "--unsafe")
+        .help("use unsafe matrix string parsing for maximum performance (no input validation)")
+        .implicit_value(true)
+        .default_value(false);
+
     program.add_argument("matrix")
         .help("the matrix to compute");
 
@@ -60,104 +240,53 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-    auto matrix_str = program.get<std::string>("matrix");
-    auto candidates = program.get<bool>("--candidates");
-    auto logger = program.get<bool>("--log");
-    auto exact = program.get<bool>("--exact");
-    auto fullsupport = program.get<bool>("--fullsupport");
-    auto timing = program.get<bool>("--timing");
-    auto matrix_id = program.get<int>("--matrixid");
+    const auto& matrix_str = program.get<std::string>("matrix");
+    const auto candidates = program.get<bool>("--candidates");
+    const auto logger = program.get<bool>("--log");
+    const auto exact = program.get<bool>("--exact");
+    const auto fullsupport = program.get<bool>("--fullsupport");
+    const auto timing = program.get<bool>("--timing");
+    const auto matrix_id = program.get<int>("--matrixid");
+    const auto unsafe = program.get<bool>("--unsafe");
 
-    // Parse CLI string format: "n#values"
-    std::vector<std::string> first_split;
-    boost::split(first_split, matrix_str, boost::is_any_of("#"));
-    if (first_split.size() != 2) {
-        std::cerr << "Error: String for the matrix does not include '#' as a separator between dimension and matrix, or several '#' were found!" << std::endl;
-        return EXIT_FAILURE;
-    }
-    
-    size_t n;
-    try {
-        n = std::stoull(first_split[0]);
-    } catch (std::exception& e) {
-        std::cerr << "Error: The given dimension could not be converted into an integer number!" << std::endl;
-        return EXIT_FAILURE;
-    }
-    
-    std::vector<std::string> second_split;
-    boost::split(second_split, first_split[1], boost::is_any_of(","));
-    
-    // Convert string values to small_rational
-    std::vector<small_rational> rational_values;
-    try {
-        for (const auto& str_val : second_split) {
-            // Parse string as "numerator/denominator" or just "numerator"
-            std::string val_str = str_val;
-            size_t slash_pos = val_str.find('/');
-            if (slash_pos != std::string::npos) {
-                // Has denominator
-                int64_t num = std::stoll(val_str.substr(0, slash_pos));
-                int64_t den = std::stoll(val_str.substr(slash_pos + 1));
-                rational_values.push_back(small_rational(num, den));
-            } else {
-                // No denominator, treat as integer
-                int64_t num = std::stoll(val_str);
-                rational_values.push_back(small_rational(num, 1));
-            }
-        }
-    } catch (std::exception& e) {
-        std::cerr << "Error: Could not convert matrix values to rational numbers!" << std::endl;
-        std::cerr << "  " << e.what() << std::endl;
-        return EXIT_FAILURE;
-    }
-    
-    rational_linalg::SmallRationalMatrix A_small;
+    // Parse matrix from CLI string format: "n#values"
     bool is_cs;
-    
-    if (rational_values.size() == n/2) {
-        // Circular symmetric matrix
-        A_small = rational_linalg::create_circular_symmetric<small_rational>(n, rational_values);
-        is_cs = true;
-    } else if (rational_values.size() == n*(n+1)/2) {
-        // Symmetric matrix (upper triangular)
-        A_small = rational_linalg::create_symmetric<small_rational>(n, rational_values);
-        is_cs = false;
+    rational_linalg::Matrix<small_rational> A;
+    if (unsafe) {
+        parse_matrix_string_unsafe(matrix_str, A, is_cs);
     } else {
-        std::cerr << "Error: The number of matrix-elements must either be floor(dimension/2) (for a circular symmetric matrix) or dimension*(dimension+1)/2 (for a symmetric matrix)!" << std::endl;
-        std::cerr << "  Got " << rational_values.size() << " values, but expected " << n/2 << " (circular symmetric) or " << n*(n+1)/2 << " (symmetric)." << std::endl;
-        return EXIT_FAILURE;
-    }
-    
-    // Convert SmallRationalMatrix to RationalMatrix
-    RationalMatrix A(n, n);
-    for (size_t i = 0; i < n; ++i) {
-        for (size_t j = 0; j < n; ++j) {
-            // Convert from small_rational to rational via string (most reliable method)
-            std::ostringstream oss;
-            oss << A_small(i, j);
-            A(i, j) = rational(oss.str());
+        if (!parse_matrix_string(matrix_str, A, is_cs)) {
+            return EXIT_FAILURE;
         }
     }
     
-    // Measure computation time
-    auto start_time = std::chrono::high_resolution_clock::now();
-    ::fracessa x = ::fracessa(A, is_cs, candidates, exact, fullsupport, logger, matrix_id);
-    auto end_time = std::chrono::high_resolution_clock::now();
+    // Measure computation time only if timing flag is set
+    std::chrono::high_resolution_clock::time_point start_time, end_time;
+    double elapsed_seconds = 0.0;
     
-    // Calculate elapsed time in seconds
-    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
-    double elapsed_seconds = duration.count() / 1000000.0;
+    if (timing) {
+        start_time = std::chrono::high_resolution_clock::now();
+    }
+    
+    ::fracessa x(A, is_cs, candidates, exact, fullsupport, logger, matrix_id);
+    
+    if (timing) {
+        end_time = std::chrono::high_resolution_clock::now();
+        // Calculate elapsed time in seconds
+        const auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+        elapsed_seconds = duration.count() / 1000000.0;
+    }
 
     std::cout << x.ess_count_ << std::endl;
     
     // Output timing on second line if -t flag is present
     if (timing) {
-        std::cout << std::fixed << std::setprecision(4) << elapsed_seconds << std::endl;
+        std::cout << std::fixed << std::setprecision(6) << elapsed_seconds << std::endl;
     }
 
     if (candidates) {
         std::cout << candidate::header() << std::endl;
-        for (auto c: x.candidates_) {
+        for (auto& c : x.candidates_) {
             std::cout << c.to_string() << std::endl;
         }
     }

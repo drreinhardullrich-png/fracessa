@@ -135,7 +135,7 @@ class ESSResult:
 
     def __str__(self):
         if self.success:
-            return f"ESS Result: {self.ess_count} ESS found in {self.computation_time:.2f}s"
+            return f"ESS Result: {self.ess_count} ESS found in {self.computation_time:.6f}s"
         else:
             return f"ESS Result: Failed - {self.error}"
 

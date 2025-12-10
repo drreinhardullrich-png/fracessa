@@ -2,7 +2,7 @@
 #define CANDIDATE_H
 
 #include <rational_linalg/matrix.hpp>
-#include <fracessa/rational.hpp>
+#include <rational_linalg/types_rational.hpp>
 #include <fracessa/bitset64.hpp>
 #include <string>
 
@@ -10,7 +10,7 @@ class candidate
 {
     public:
         size_t candidate_id = 0;
-        rational_linalg::Matrix<rational> vector;  // Column vector: Matrix<rational>(n, 1)
+        rational_linalg::Matrix<rational> vector;  // Column vector: Matrix<rational>(n, 1) - always use arbitrary precision
         bitset64 support;
         size_t support_size = 0;
         bitset64 extended_support;
@@ -18,16 +18,17 @@ class candidate
         size_t shift_reference;
         bool is_ess;
         std::string stability;
-        rational payoff;
+        rational payoff;  // Always use arbitrary precision
         double payoff_double;
-
 
         std::string to_string()
         {
-            std::string str = "";
+            std::string str;
+            str.reserve(256);  // Pre-allocate reasonable size
             str += std::to_string(candidate_id) + ";";
             for (size_t i = 0; i < vector.rows(); i++) {
-                str += vector(i, 0).template convert_to<std::string>() + ",";
+                // Convert rational to string, normalize integers (X/1 -> X)
+                str += ::to_string(vector(i, 0)) + ",";
             }
             if (vector.rows() > 0)
                 str.pop_back();
@@ -38,7 +39,7 @@ class candidate
             str += std::to_string(shift_reference) + ";";
             str += std::to_string(is_ess) + ";";
             str += stability + ";";
-            str += payoff.template convert_to<std::string>() + ";";
+            str += ::to_string(payoff) + ";";
             str += std::to_string(payoff_double);
 
             return str;

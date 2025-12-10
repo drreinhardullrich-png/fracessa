@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-Script to regenerate baseline files by running the old executable (REF_linux64.exe)
+Script to regenerate baseline files by running the modified executable (REF_linux64_modified.exe)
 on all matrices from verification_matrices.json.
 
 This script:
 1. Loads matrices from verification_matrices.json
-2. Runs the old executable (python/the_old_exe/REF_linux64.exe) with -c flag
-3. Parses the output to extract ESS counts and candidates
+2. Runs the modified executable (python/the_old_exe/REF_linux64_modified.exe) with -c and -t flags
+3. Parses the output to extract ESS counts, timing (from C++), and candidates
 4. Writes both baseline files:
-   - fracessa_verification_result_baseline.json
-   - fracessa_verification_candidates_baseline.csv
+   - baseline_result.json
+   - baseline_candidates.csv
 """
 
 import json
@@ -80,74 +80,81 @@ def full_matrix_to_upper_triangular(matrix_str: str, dimension: int) -> str:
 
 
 def find_old_executable(script_dir: Path) -> Path:
-    """Find the old executable path."""
+    """Find the modified executable path."""
     # Try relative to script directory (python/verification/)
-    # The old executable is in the_old_exe subdirectory of verification
-    old_exe_path = script_dir / "the_old_exe" / "REF_linux64.exe"
+    # The modified executable is in the_old_exe subdirectory of verification
+    old_exe_path = script_dir / "the_old_exe" / "REF_linux64_modified.exe"
     
     if old_exe_path.exists():
         return old_exe_path
     
     # Try from project root
     project_root = script_dir.parent.parent
-    old_exe_path = project_root / "python" / "verification" / "the_old_exe" / "REF_linux64.exe"
+    old_exe_path = project_root / "python" / "verification" / "the_old_exe" / "REF_linux64_modified.exe"
     if old_exe_path.exists():
         return old_exe_path
     
-    raise FileNotFoundError(f"Old executable not found. Tried: {old_exe_path}")
+    raise FileNotFoundError(f"Modified executable not found. Tried: {old_exe_path}")
 
 
 def run_old_executable(exe_path: Path, matrix_cli_string: str, matrix_id: int = -1, timeout: float = 1800.0) -> Tuple[bool, int, List[Dict], float, Optional[str]]:
     """
-    Run the old executable and parse output.
-    The old executable doesn't support -t flag, so we use external timing.
+    Run the modified executable and parse output.
+    The modified executable supports -t flag for C++ timing output.
+    Note: matrix_id is kept for tracking but not passed to the executable (it doesn't support -m flag).
     
     Args:
         exe_path: Path to the executable
         matrix_cli_string: Matrix in CLI format (e.g., "2#0,1,1,0")
-        matrix_id: Optional matrix ID to pass to executable (may not be supported by old executable)
+        matrix_id: Matrix ID (kept for tracking, not passed to executable)
         timeout: Maximum computation time in seconds
     
     Returns:
         (success, ess_count, candidates, timing, error_message)
     """
-    # Old executable doesn't support -t flag or -m flag, so use external timing
-    # Note: matrix_id is not passed to old executable as it doesn't support -m flag
-    cmd = [str(exe_path), "-c", matrix_cli_string]
+    # Modified executable supports -t flag for timing (but not -m flag for matrix ID)
+    cmd = [str(exe_path), "-c", "-t", matrix_cli_string]
     
     try:
-        start_time = time.time()
         result = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
             timeout=timeout
         )
-        end_time = time.time()
-        timing = end_time - start_time
         
         if result.returncode != 0:
-            return (False, 0, [], timing, f"Command failed with return code {result.returncode}: {result.stderr}")
+            return (False, 0, [], 0.0, f"Command failed with return code {result.returncode}: {result.stderr}")
         
         # Parse output
         lines = result.stdout.strip().split('\n')
         if not lines or not lines[0].strip():
-            return (False, 0, [], timing, "No output from executable")
+            return (False, 0, [], 0.0, "No output from executable")
         
         try:
             ess_count = int(lines[0].strip())
         except ValueError:
-            return (False, 0, [], timing, f"Could not parse ESS count from: {lines[0]}")
+            return (False, 0, [], 0.0, f"Could not parse ESS count from: {lines[0]}")
+        
+        # Parse timing from line 1 (C++ timing output)
+        timing = 0.0
+        if len(lines) > 1:
+            try:
+                timing = float(lines[1].strip())
+            except (ValueError, IndexError):
+                # If timing line is missing or invalid, use 0.0
+                timing = 0.0
         
         # Parse candidates
         candidates = []
-        # Old executable output format:
+        # Modified executable output format with -t flag:
         # Line 0: ESS count
-        # Line 1: CSV header
-        # Lines 2+: CSV data rows
-        if len(lines) > 2:
-            # Skip line 0 (ESS count) and line 1 (header), process remaining lines
-            candidate_lines = lines[2:]
+        # Line 1: Timing (float)
+        # Line 2: CSV header
+        # Lines 3+: CSV data rows
+        if len(lines) > 3:
+            # Skip line 0 (ESS count), line 1 (timing), and line 2 (header), process remaining lines
+            candidate_lines = lines[3:]
             
             for line in candidate_lines:
                 if line.strip():
@@ -179,7 +186,7 @@ def run_old_executable(exe_path: Path, matrix_cli_string: str, matrix_id: int = 
         return (True, ess_count, candidates, timing, None)
         
     except subprocess.TimeoutExpired:
-        return (False, 0, [], timeout, f"Computation timed out after {timeout} seconds")
+        return (False, 0, [], 0.0, f"Computation timed out after {timeout} seconds")
     except Exception as e:
         return (False, 0, [], 0.0, f"Exception: {str(e)}")
 
@@ -272,10 +279,10 @@ def main():
     baseline_results_file = script_dir / "baseline_result.json"
     baseline_candidates_file = script_dir / "baseline_candidates.csv"
     
-    # Find old executable
+    # Find modified executable
     try:
         old_exe_path = find_old_executable(script_dir)
-        print(f"Using old executable: {old_exe_path}")
+        print(f"Using modified executable: {old_exe_path}")
         
         # Make executable if needed
         os.chmod(old_exe_path, 0o755)
@@ -326,7 +333,7 @@ def main():
             actual_ess = result_entry["result"]["ess_count"]
             timing = result_entry["result"]["timing"]
             expected_ess = matrix_data['number_ess']
-            status = f"✅ {actual_ess} ESS in {timing:.2f}s"
+            status = f"✅ {actual_ess} ESS in {timing:.6f}s"
             if actual_ess != expected_ess:
                 status += f" ⚠️ (expected {expected_ess})"
             print(status)
@@ -357,10 +364,11 @@ def main():
                 "num_processes": 1,  # Sequential processing
                 "fracessa_settings": {
                     "include_candidates": True,
-                    "enable_logging": False,  # Old executable may not support this
+                    "enable_logging": False,
                     "exact_arithmetic": False,
                     "full_support_search": False,
-                    "timeout": 1800.0
+                    "timeout": 1800.0,
+                    "use_cpp_timing": True
                 }
             },
             "results": results
