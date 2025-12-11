@@ -311,9 +311,12 @@ if(ENABLE_STATIC_LINKING)
         message(STATUS "Using static GMP: ${GMP_LIBRARIES}")
         
         if(UNIX AND NOT APPLE)
+            # Linux: static link libgcc and libstdc++ but not glibc
             set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++")
         elseif(APPLE)
-            set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++")
+            # macOS: clang doesn't support -static-libgcc/-static-libstdc++
+            # Static GMP libraries are already linked, no additional flags needed
+            message(STATUS "macOS: Using static GMP libraries (no additional linker flags needed)")
         endif()
     else()
         message(WARNING "Static GMP not found, using dynamic")
