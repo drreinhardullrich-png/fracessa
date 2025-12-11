@@ -207,6 +207,22 @@ FetchContent_Declare(
     GIT_SHALLOW    TRUE
 )
 
+# rational (needed for boost/rational.hpp)
+FetchContent_Declare(
+    boost_rational
+    GIT_REPOSITORY https://github.com/boostorg/rational.git
+    GIT_TAG        boost-1.89.0
+    GIT_SHALLOW    TRUE
+)
+
+# safe_numerics (needed for boost/safe_numerics/safe_integer.hpp)
+FetchContent_Declare(
+    boost_safe_numerics
+    GIT_REPOSITORY https://github.com/boostorg/safe_numerics.git
+    GIT_TAG        boost-1.89.0
+    GIT_SHALLOW    TRUE
+)
+
 # Make all dependencies available (core dependencies first)
 FetchContent_MakeAvailable(
     spdlog 
@@ -222,6 +238,8 @@ FetchContent_MakeAvailable(
     boost_math 
     boost_integer 
     boost_algorithm
+    boost_rational
+    boost_safe_numerics
 )
 
 message(STATUS "Using Boost 1.89.0 headers (from FetchContent)")
@@ -292,27 +310,49 @@ if(ENABLE_STATIC_LINKING)
     message(STATUS "Static linking enabled - searching for static GMP libraries")
     
     # Find static GMP libraries
-    find_library(GMP_STATIC_LIB
-        NAMES libgmp.a gmp
-        PATHS
-            /usr/lib
-            /usr/lib/x86_64-linux-gnu
-            /usr/local/lib
-            /opt/homebrew/lib
-            /opt/local/lib
-        NO_DEFAULT_PATH
-    )
-    
-    find_library(GMPXX_STATIC_LIB
-        NAMES libgmpxx.a gmpxx
-        PATHS
-            /usr/lib
-            /usr/lib/x86_64-linux-gnu
-            /usr/local/lib
-            /opt/homebrew/lib
-            /opt/local/lib
-        NO_DEFAULT_PATH
-    )
+    # On Linux, look in standard library paths
+    # On macOS, check both Homebrew locations (Intel and Apple Silicon)
+    if(APPLE)
+        # macOS: Check Homebrew paths (Apple Silicon first, then Intel)
+        find_library(GMP_STATIC_LIB
+            NAMES libgmp.a gmp
+            PATHS
+                /opt/homebrew/lib
+                /usr/local/lib
+                /opt/local/lib
+            NO_DEFAULT_PATH
+        )
+        
+        find_library(GMPXX_STATIC_LIB
+            NAMES libgmpxx.a gmpxx
+            PATHS
+                /opt/homebrew/lib
+                /usr/local/lib
+                /opt/local/lib
+            NO_DEFAULT_PATH
+        )
+    else()
+        # Linux: Check standard library paths
+        find_library(GMP_STATIC_LIB
+            NAMES libgmp.a gmp
+            PATHS
+                /usr/lib
+                /usr/lib/x86_64-linux-gnu
+                /usr/lib64
+                /usr/local/lib
+            NO_DEFAULT_PATH
+        )
+        
+        find_library(GMPXX_STATIC_LIB
+            NAMES libgmpxx.a gmpxx
+            PATHS
+                /usr/lib
+                /usr/lib/x86_64-linux-gnu
+                /usr/lib64
+                /usr/local/lib
+            NO_DEFAULT_PATH
+        )
+    endif()
     
     # Also try with default paths if not found
     if(NOT GMP_STATIC_LIB)
@@ -328,17 +368,24 @@ if(ENABLE_STATIC_LINKING)
         
         # Add platform-specific static linker flags
         if(UNIX AND NOT APPLE)
-            # Linux: fully static linking
-            set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static")
-            message(STATUS "Linux static linking enabled: -static")
+            # Linux: Only statically link GMP and standard C++ libraries
+            # Do NOT use -static as it tries to link glibc statically (often fails)
+            # Instead, link GMP statically and use static libgcc/libstdc++
+            set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++")
+            message(STATUS "Linux static linking enabled: GMP static, libgcc/libstdc++ static")
         elseif(APPLE)
             # macOS: static libgcc/libstdc++ but dynamic system libraries
             set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++")
             message(STATUS "macOS static linking enabled: -static-libgcc -static-libstdc++")
         endif()
     else()
-        message(WARNING "Static linking requested but static GMP libraries not found. Falling back to dynamic linking.")
-        message(WARNING "GMP_STATIC_LIB: ${GMP_STATIC_LIB}, GMPXX_STATIC_LIB: ${GMPXX_STATIC_LIB}")
+        message(WARNING "Static linking requested but static GMP libraries not found.")
+        message(WARNING "GMP_STATIC_LIB: ${GMP_STATIC_LIB}")
+        message(WARNING "GMPXX_STATIC_LIB: ${GMPXX_STATIC_LIB}")
+        message(WARNING "Falling back to dynamic linking. Binary will require GMP to be installed.")
+        if(ENABLE_STATIC_LINKING)
+            message(WARNING "Consider installing static GMP libraries or building GMP from source with --enable-static")
+        endif()
     endif()
 endif()
 
@@ -383,6 +430,8 @@ target_include_directories(fracessa_lib
         $<BUILD_INTERFACE:${boost_math_SOURCE_DIR}/include>
         $<BUILD_INTERFACE:${boost_integer_SOURCE_DIR}/include>
         $<BUILD_INTERFACE:${boost_algorithm_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${boost_rational_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${boost_safe_numerics_SOURCE_DIR}/include>
 )
 
 # Suppress Boost deprecation pragma messages
