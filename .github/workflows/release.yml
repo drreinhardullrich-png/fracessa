@@ -1,0 +1,127 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact_name: fracessa-linux-x64
+            binary_path: fracessa/build/fracessa
+          - os: macos-latest
+            artifact_name: fracessa-macos-x64
+            binary_path: fracessa/build/fracessa
+          - os: windows-latest
+            artifact_name: fracessa-windows-x64
+            binary_path: fracessa/build/Release/fracessa.exe
+    
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+      # ------------------------------------------------
+      # 1. Checkout Source Code
+      # ------------------------------------------------
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      
+      # ------------------------------------------------
+      # 2. Install Dependencies
+      # ------------------------------------------------
+      - name: Install Dependencies (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake \
+            g++ \
+            libgmp-dev \
+            libgmpxx4ldbl
+      
+      - name: Install Dependencies (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          brew install gmp
+      
+      - name: Install Dependencies (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          # Install GMP via vcpkg
+          git clone https://github.com/Microsoft/vcpkg.git C:/vcpkg
+          C:/vcpkg/bootstrap-vcpkg.bat
+          C:/vcpkg/vcpkg integrate install
+          C:/vcpkg/vcpkg install gmp:x64-windows
+        shell: cmd
+      
+      # ------------------------------------------------
+      # 3. Configure CMake
+      # ------------------------------------------------
+      - name: Configure CMake (Linux/macOS)
+        if: matrix.os != 'windows-latest'
+        working-directory: fracessa
+        run: |
+          cmake -B build -S . \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TESTING=OFF
+      
+      - name: Configure CMake (Windows)
+        if: matrix.os == 'windows-latest'
+        working-directory: fracessa
+        run: |
+          cmake -B build -S . \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TESTING=OFF \
+            -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
+        shell: cmd
+      
+      # ------------------------------------------------
+      # 4. Build Project
+      # ------------------------------------------------
+      - name: Build Project
+        working-directory: fracessa
+        run: |
+          cmake --build build --config Release --parallel
+      
+      # ------------------------------------------------
+      # 5. Package Binary
+      # ------------------------------------------------
+      - name: Package Binary (Linux/macOS)
+        if: matrix.os != 'windows-latest'
+        working-directory: fracessa
+        run: |
+          # Create archive with binary
+          ARCHIVE_NAME="${{ matrix.artifact_name }}.tar.gz"
+          tar -czf $ARCHIVE_NAME -C build fracessa
+          echo "ARCHIVE_NAME=$ARCHIVE_NAME" >> $GITHUB_ENV
+          echo "ARCHIVE_PATH=fracessa/$ARCHIVE_NAME" >> $GITHUB_ENV
+      
+      - name: Package Binary (Windows)
+        if: matrix.os == 'windows-latest'
+        working-directory: fracessa
+        run: |
+          # Create zip archive with binary
+          ARCHIVE_NAME="${{ matrix.artifact_name }}.zip"
+          powershell Compress-Archive -Path build/Release/fracessa.exe -DestinationPath $ARCHIVE_NAME
+          echo "ARCHIVE_NAME=$ARCHIVE_NAME" >> $GITHUB_ENV
+          echo "ARCHIVE_PATH=fracessa/$ARCHIVE_NAME" >> $GITHUB_ENV
+        shell: cmd
+      
+      # ------------------------------------------------
+      # 6. Upload Release Asset
+      # ------------------------------------------------
+      - name: Upload Release Asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.ARCHIVE_PATH }}
+          draft: false
+          prerelease: ${{ contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha') || contains(github.ref_name, 'rc') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
