@@ -80,3 +80,7 @@ third_party/
 # Third-party archives
 *.tar.gz
 *.zip
+
+# Profiling reports
+callgrind_reports/
+gprof_reports/
