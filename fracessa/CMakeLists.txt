@@ -282,35 +282,51 @@ endif()
 if(NOT GMP_FOUND)
     # Fall back to manual search
     if(APPLE)
-        # macOS: Check GMP_ROOT first (set by CI), then Homebrew paths
-        if(DEFINED GMP_ROOT)
+        # macOS: Check GMP_INCLUDE_DIR environment variable FIRST (set by CI)
+        # Then check GMP_ROOT, then fall back to standard Homebrew paths
+        if(DEFINED ENV{GMP_INCLUDE_DIR})
+            set(SEARCH_PATHS $ENV{GMP_INCLUDE_DIR})
+            message(STATUS "Using GMP_INCLUDE_DIR from environment: ${SEARCH_PATHS}")
+        elseif(DEFINED ENV{GMP_ROOT})
+            set(SEARCH_PATHS $ENV{GMP_ROOT}/include)
+            message(STATUS "Using GMP_ROOT from environment: $ENV{GMP_ROOT}")
+        elseif(DEFINED GMP_ROOT)
             set(SEARCH_PATHS ${GMP_ROOT}/include)
-            set(LIB_SEARCH_PATHS ${GMP_ROOT}/lib)
-            message(STATUS "Searching for GMP in: ${SEARCH_PATHS}")
+            message(STATUS "Using GMP_ROOT variable: ${GMP_ROOT}")
         else()
             set(SEARCH_PATHS /opt/homebrew/include /usr/local/include /opt/local/include)
+            message(STATUS "Using default Homebrew paths: ${SEARCH_PATHS}")
+        endif()
+        
+        # Set library search paths
+        if(DEFINED ENV{GMP_LIBRARIES_DIR})
+            set(LIB_SEARCH_PATHS $ENV{GMP_LIBRARIES_DIR})
+        elseif(DEFINED ENV{GMP_ROOT})
+            set(LIB_SEARCH_PATHS $ENV{GMP_ROOT}/lib)
+        elseif(DEFINED GMP_ROOT)
+            set(LIB_SEARCH_PATHS ${GMP_ROOT}/lib)
+        else()
             set(LIB_SEARCH_PATHS /opt/homebrew/lib /usr/local/lib /opt/local/lib)
         endif()
         
+        message(STATUS "Searching for GMP headers in: ${SEARCH_PATHS}")
+        message(STATUS "Searching for GMP libraries in: ${LIB_SEARCH_PATHS}")
+        
+        # Look for the C++ header file (which is the source of the error)
+        # Remove NO_DEFAULT_PATH to allow compiler to fall back to system defaults
         find_path(GMP_INCLUDE_DIR NAMES gmpxx.h
             PATHS
                 ${SEARCH_PATHS}
-            NO_DEFAULT_PATH
         )
         
-        find_library(GMP_LIBRARIES
-            NAMES gmp
-            PATHS
-                ${LIB_SEARCH_PATHS}
-            NO_DEFAULT_PATH
-        )
+        # Look for both the C library and the C++ library
+        find_library(GMP_LIB NAMES gmp PATHS ${LIB_SEARCH_PATHS})
+        find_library(GMPXX_LIB NAMES gmpxx PATHS ${LIB_SEARCH_PATHS})
         
-        find_library(GMPXX_LIBRARIES
-            NAMES gmpxx
-            PATHS
-                ${LIB_SEARCH_PATHS}
-            NO_DEFAULT_PATH
-        )
+        # Combine them
+        if(GMP_LIB AND GMPXX_LIB)
+            set(GMP_LIBRARIES ${GMP_LIB} ${GMPXX_LIB})
+        endif()
     else()
         # Linux: Check standard paths
         find_path(GMP_INCLUDE_DIR NAMES gmpxx.h
@@ -339,26 +355,43 @@ if(NOT GMP_FOUND)
         )
     endif()
     
-    # Also try with default paths if not found
-    if(NOT GMP_INCLUDE_DIR)
-        find_path(GMP_INCLUDE_DIR NAMES gmpxx.h)
-    endif()
-    if(NOT GMP_LIBRARIES)
-        find_library(GMP_LIBRARIES NAMES gmp)
-    endif()
-    if(NOT GMPXX_LIBRARIES)
-        find_library(GMPXX_LIBRARIES NAMES gmpxx)
-    endif()
-    
-    if(GMP_INCLUDE_DIR AND GMP_LIBRARIES AND GMPXX_LIBRARIES)
-        set(GMP_FOUND TRUE)
-        set(GMP_LIBRARIES ${GMP_LIBRARIES} ${GMPXX_LIBRARIES})
+    # Also try with default paths if not found (only for non-Apple platforms)
+    if(NOT APPLE)
+        if(NOT GMP_INCLUDE_DIR)
+            find_path(GMP_INCLUDE_DIR NAMES gmpxx.h)
+        endif()
+        if(NOT GMP_LIBRARIES)
+            find_library(GMP_LIBRARIES NAMES gmp)
+        endif()
+        if(NOT GMPXX_LIBRARIES)
+            find_library(GMPXX_LIBRARIES NAMES gmpxx)
+        endif()
+        
+        if(GMP_INCLUDE_DIR AND GMP_LIBRARIES AND GMPXX_LIBRARIES)
+            set(GMP_FOUND TRUE)
+            set(GMP_LIBRARIES ${GMP_LIBRARIES} ${GMPXX_LIBRARIES})
+        endif()
+    else()
+        # For macOS, we already combined GMP_LIB and GMPXX_LIB into GMP_LIBRARIES
+        if(GMP_INCLUDE_DIR AND GMP_LIBRARIES)
+            set(GMP_FOUND TRUE)
+            message(STATUS "GMP found on macOS: include=${GMP_INCLUDE_DIR}, libs=${GMP_LIBRARIES}")
+        endif()
     endif()
 endif()
 
 if(GMP_FOUND)
     message(STATUS "Found GMP: ${GMP_LIBRARIES}")
     message(STATUS "GMP include dir: ${GMP_INCLUDE_DIR}")
+    # Validate that GMP_INCLUDE_DIR is set and non-empty
+    if(NOT GMP_INCLUDE_DIR OR GMP_INCLUDE_DIR STREQUAL "GMP_INCLUDE_DIR-NOTFOUND")
+        message(FATAL_ERROR "GMP_INCLUDE_DIR is not set or invalid: ${GMP_INCLUDE_DIR}")
+    endif()
+    # Verify the header file actually exists
+    if(NOT EXISTS "${GMP_INCLUDE_DIR}/gmpxx.h")
+        message(FATAL_ERROR "GMP header file not found at: ${GMP_INCLUDE_DIR}/gmpxx.h")
+    endif()
+    message(STATUS "Verified GMP header exists: ${GMP_INCLUDE_DIR}/gmpxx.h")
     message(STATUS "Using GMP mpq_class backend for arbitrary precision rational numbers")
 else()
     message(FATAL_ERROR "GMP library not found. Please install GMP: sudo apt-get install libgmp-dev libgmpxx4ldbl (or libgmpxx-dev)")
@@ -469,10 +502,20 @@ target_include_directories(fracessa_lib
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/fracessa>
         $<BUILD_INTERFACE:${argparse_SOURCE_DIR}/include>
         $<BUILD_INTERFACE:${spdlog_SOURCE_DIR}/include>
-        ${GMP_INCLUDE_DIR}
     PRIVATE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
 )
+
+# Add GMP include directory only if it's set and valid
+if(GMP_INCLUDE_DIR AND NOT GMP_INCLUDE_DIR STREQUAL "GMP_INCLUDE_DIR-NOTFOUND")
+    target_include_directories(fracessa_lib
+        PUBLIC
+            ${GMP_INCLUDE_DIR}
+    )
+    message(STATUS "Added GMP include directory to fracessa_lib: ${GMP_INCLUDE_DIR}")
+else()
+    message(FATAL_ERROR "Cannot add GMP include directory - GMP_INCLUDE_DIR is invalid: ${GMP_INCLUDE_DIR}")
+endif()
 
 # Boost libraries as system headers (suppresses deprecation warnings)
 target_include_directories(fracessa_lib
