@@ -255,6 +255,12 @@ message(STATUS "Using Boost 1.89.0 headers (from FetchContent)")
     set(BOOST_LOCAL_FOUND TRUE)
 
 # Find GMP library for arbitrary precision rational numbers
+# Check for GMP_ROOT environment variable (set by CI for Homebrew installations)
+if(DEFINED ENV{GMP_ROOT})
+    set(GMP_ROOT $ENV{GMP_ROOT} CACHE PATH "GMP root directory")
+    message(STATUS "Using GMP_ROOT from environment: ${GMP_ROOT}")
+endif()
+
 # Try pkg-config first, then fall back to find_library
 find_package(PkgConfig QUIET)
 if(PkgConfig_FOUND)
@@ -276,30 +282,33 @@ endif()
 if(NOT GMP_FOUND)
     # Fall back to manual search
     if(APPLE)
-        # macOS: Check Homebrew paths (Apple Silicon first, then Intel)
+        # macOS: Check GMP_ROOT first (set by CI), then Homebrew paths
+        if(DEFINED GMP_ROOT)
+            set(SEARCH_PATHS ${GMP_ROOT}/include)
+            set(LIB_SEARCH_PATHS ${GMP_ROOT}/lib)
+            message(STATUS "Searching for GMP in: ${SEARCH_PATHS}")
+        else()
+            set(SEARCH_PATHS /opt/homebrew/include /usr/local/include /opt/local/include)
+            set(LIB_SEARCH_PATHS /opt/homebrew/lib /usr/local/lib /opt/local/lib)
+        endif()
+        
         find_path(GMP_INCLUDE_DIR NAMES gmpxx.h
             PATHS
-                /opt/homebrew/include
-                /usr/local/include
-                /opt/local/include
+                ${SEARCH_PATHS}
             NO_DEFAULT_PATH
         )
         
         find_library(GMP_LIBRARIES
             NAMES gmp
             PATHS
-                /opt/homebrew/lib
-                /usr/local/lib
-                /opt/local/lib
+                ${LIB_SEARCH_PATHS}
             NO_DEFAULT_PATH
         )
         
         find_library(GMPXX_LIBRARIES
             NAMES gmpxx
             PATHS
-                /opt/homebrew/lib
-                /usr/local/lib
-                /opt/local/lib
+                ${LIB_SEARCH_PATHS}
             NO_DEFAULT_PATH
         )
     else()
