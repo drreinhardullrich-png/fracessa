@@ -1,27 +1,14 @@
 cmake_minimum_required(VERSION 3.10.2)
 
 # FORCE Release build type - this project only builds in Release mode
-# Set before project() to ensure it's applied from the start
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
     message(STATUS "Build type not specified, forcing Release")
 endif()
 
 # Maximum optimization flags for Release builds
-# -O3: Highest optimization level
-# -DNDEBUG: Disable assertions for performance
-# -flto: Link-Time Optimization (cross-module optimizations)
-#   Note: For faster compilation with minimal runtime loss, use -flto=thin (requires GCC 6+ or Clang)
-#   For older compilers, regular -flto is used (slower compile but same runtime performance)
-# Note: -march=native and -mtune=native are commented out for portability
-#       Uncomment them if you want CPU-specific optimizations (10-20% faster but not portable)
-set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG -flto" CACHE STRING "Flags used by the C++ compiler during release builds" FORCE)
-set(CMAKE_C_FLAGS_RELEASE "-O3 -DNDEBUG -flto" CACHE STRING "Flags used by the C compiler during release builds" FORCE)
-set(CMAKE_EXE_LINKER_FLAGS_RELEASE "-flto" CACHE STRING "Linker flags for Release builds" FORCE)
-set(CMAKE_SHARED_LINKER_FLAGS_RELEASE "-flto" CACHE STRING "Shared linker flags for Release builds" FORCE)
-
-# Disable Debug builds - they are not supported
-# If someone tries to build Debug, they'll get an error above
+set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG" CACHE STRING "Flags used by the C++ compiler during release builds" FORCE)
+set(CMAKE_C_FLAGS_RELEASE "-O3 -DNDEBUG" CACHE STRING "Flags used by the C compiler during release builds" FORCE)
 
 project(fracessa
     VERSION 1.0.0
@@ -34,603 +21,383 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# Enforce Release build type after project() is called
+# Enforce Release build type
 if(CMAKE_BUILD_TYPE STREQUAL "")
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
-    message(STATUS "Build type not specified, setting to Release")
 elseif(NOT CMAKE_BUILD_TYPE STREQUAL "Release")
     message(FATAL_ERROR "Only Release builds are supported. Current build type: ${CMAKE_BUILD_TYPE}")
 endif()
 
-# Apply maximum optimization flags to all targets
-# These are applied in addition to CMAKE_CXX_FLAGS_RELEASE
+# Apply LTO only if supported (check after project())
 if(CMAKE_BUILD_TYPE STREQUAL "Release" AND NOT MSVC)
-    # Check if compiler supports thin LTO (GCC 6+ or Clang)
-    # Thin LTO compiles faster than full LTO with ~95-99% of runtime performance
-    include(CheckCXXCompilerFlag)
-    check_cxx_compiler_flag("-flto=thin" COMPILER_SUPPORTS_THIN_LTO)
+    include(CheckIPOSupported)
+    check_ipo_supported(RESULT IPO_SUPPORTED OUTPUT IPO_ERROR)
     
-    if(COMPILER_SUPPORTS_THIN_LTO)
-        add_compile_options(-flto=thin)
-        add_link_options(-flto=thin)
-        message(STATUS "Release build with maximum optimizations: -O3 -flto=thin (faster compilation)")
+    if(IPO_SUPPORTED)
+        set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
+        message(STATUS "LTO/IPO enabled via CMAKE_INTERPROCEDURAL_OPTIMIZATION")
     else()
-        # Fall back to regular LTO for older compilers
-        add_compile_options(-flto)
-        add_link_options(-flto)
-        # Note: -flto-partition=none is not supported by all compiler versions
-        # Removing it to avoid compilation errors
-        message(STATUS "Release build with maximum optimizations: -O3 -flto")
+        message(STATUS "LTO/IPO not supported: ${IPO_ERROR}")
     endif()
-    
-    # Additional aggressive optimizations (optional - uncomment if needed)
-    # add_compile_options(-march=native -mtune=native)  # CPU-specific optimizations (not portable)
-    # add_compile_options(-ffast-math)  # Aggressive math optimizations (may affect precision)
 endif()
 
-# Enable compiler cache for faster rebuilds (if available)
-# ccache significantly speeds up recompilation by caching object files
+# Enable compiler cache for faster rebuilds
 find_program(CCACHE_PROGRAM ccache)
 if(CCACHE_PROGRAM)
     set(CMAKE_CXX_COMPILER_LAUNCHER ${CCACHE_PROGRAM})
     set(CMAKE_C_COMPILER_LAUNCHER ${CCACHE_PROGRAM})
-    message(STATUS "Using ccache for faster compilation: ${CCACHE_PROGRAM}")
-else()
-    message(STATUS "ccache not found - install it for faster rebuilds: sudo apt-get install ccache")
+    message(STATUS "Using ccache: ${CCACHE_PROGRAM}")
 endif()
 
-# Generate compile_commands.json for IDE support
+# Generate compile_commands.json
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# Optimize compilation speed with parallel builds
-# This sets the default number of parallel jobs for cmake --build
-# Users can still override with: cmake --build . --parallel N
+# Parallel builds
 include(ProcessorCount)
 ProcessorCount(N)
 if(NOT N EQUAL 0)
     set(CMAKE_BUILD_PARALLEL_LEVEL ${N} CACHE STRING "Number of parallel build jobs")
-    message(STATUS "Parallel build level set to ${N} cores (override with: cmake --build . --parallel N)")
+    message(STATUS "Parallel build level: ${N} cores")
 endif()
 
-# Build configuration options
-option(BUILD_SHARED_LIBS "Build shared libraries instead of static" OFF)
+# Build options
+option(BUILD_SHARED_LIBS "Build shared libraries" OFF)
 option(ENABLE_TESTING "Enable testing" OFF)
 option(BUILD_TESTING "Build unit tests" OFF)
-option(ENABLE_STATIC_LINKING "Enable static linking of all dependencies" OFF)
+option(ENABLE_STATIC_LINKING "Enable static linking" OFF)
 
-# Add compiler warnings
+# Compiler warnings
 if(MSVC)
     add_compile_options(/W4)
 else()
     add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
-# Use FetchContent to download dependencies
-# Set base directory to third_party so dependencies persist across cache clears
-set(FETCHCONTENT_BASE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party CACHE PATH "Directory for FetchContent downloads")
+# FetchContent setup
+set(FETCHCONTENT_BASE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party CACHE PATH "FetchContent base dir")
 include(FetchContent)
 
-# Fetch spdlog
-FetchContent_Declare(
-    spdlog
+# Declare all dependencies
+FetchContent_Declare(spdlog
     GIT_REPOSITORY https://github.com/gabime/spdlog.git
-    GIT_TAG        v1.13.0
+    GIT_TAG v1.13.0
 )
 
-# Fetch argparse
-FetchContent_Declare(
-    argparse
+FetchContent_Declare(argparse
     GIT_REPOSITORY https://github.com/p-ranav/argparse.git
-    GIT_TAG        v2.9
+    GIT_TAG v2.9
 )
 
-# Fetch Boost libraries (headers-only, individual repos for smaller downloads)
-# Core dependencies first
-FetchContent_Declare(
-    boost_core
+# Boost dependencies
+set(BOOST_TAG boost-1.89.0)
+set(BOOST_SHALLOW TRUE)
+
+FetchContent_Declare(boost_core
     GIT_REPOSITORY https://github.com/boostorg/core.git
-    GIT_TAG        boost-1.89.0
-    GIT_SHALLOW    TRUE
+    GIT_TAG ${BOOST_TAG}
+    GIT_SHALLOW ${BOOST_SHALLOW}
 )
 
-FetchContent_Declare(
-    boost_config
+FetchContent_Declare(boost_config
     GIT_REPOSITORY https://github.com/boostorg/config.git
-    GIT_TAG        boost-1.89.0
-    GIT_SHALLOW    TRUE
+    GIT_TAG ${BOOST_TAG}
+    GIT_SHALLOW ${BOOST_SHALLOW}
 )
 
-FetchContent_Declare(
-    boost_predef
+FetchContent_Declare(boost_predef
     GIT_REPOSITORY https://github.com/boostorg/predef.git
-    GIT_TAG        boost-1.89.0
-    GIT_SHALLOW    TRUE
+    GIT_TAG ${BOOST_TAG}
+    GIT_SHALLOW ${BOOST_SHALLOW}
 )
 
-FetchContent_Declare(
-    boost_assert
+FetchContent_Declare(boost_assert
     GIT_REPOSITORY https://github.com/boostorg/assert.git
-    GIT_TAG        boost-1.89.0
-    GIT_SHALLOW    TRUE
+    GIT_TAG ${BOOST_TAG}
+    GIT_SHALLOW ${BOOST_SHALLOW}
 )
 
-FetchContent_Declare(
-    boost_static_assert
+FetchContent_Declare(boost_static_assert
     GIT_REPOSITORY https://github.com/boostorg/static_assert.git
-    GIT_TAG        boost-1.89.0
-    GIT_SHALLOW    TRUE
+    GIT_TAG ${BOOST_TAG}
+    GIT_SHALLOW ${BOOST_SHALLOW}
 )
 
-FetchContent_Declare(
-    boost_throw_exception
+FetchContent_Declare(boost_throw_exception
     GIT_REPOSITORY https://github.com/boostorg/throw_exception.git
-    GIT_TAG        boost-1.89.0
-    GIT_SHALLOW    TRUE
+    GIT_TAG ${BOOST_TAG}
+    GIT_SHALLOW ${BOOST_SHALLOW}
 )
 
-FetchContent_Declare(
-    boost_type_traits
+FetchContent_Declare(boost_type_traits
     GIT_REPOSITORY https://github.com/boostorg/type_traits.git
-    GIT_TAG        boost-1.89.0
-    GIT_SHALLOW    TRUE
+    GIT_TAG ${BOOST_TAG}
+    GIT_SHALLOW ${BOOST_SHALLOW}
 )
 
-# multiprecision
-FetchContent_Declare(
-    boost_multiprecision
+FetchContent_Declare(boost_multiprecision
     GIT_REPOSITORY https://github.com/boostorg/multiprecision.git
-    GIT_TAG        boost-1.89.0
-    GIT_SHALLOW    TRUE
+    GIT_TAG ${BOOST_TAG}
+    GIT_SHALLOW ${BOOST_SHALLOW}
 )
 
-# math
-FetchContent_Declare(
-    boost_math
+FetchContent_Declare(boost_math
     GIT_REPOSITORY https://github.com/boostorg/math.git
-    GIT_TAG        boost-1.89.0
-    GIT_SHALLOW    TRUE
+    GIT_TAG ${BOOST_TAG}
+    GIT_SHALLOW ${BOOST_SHALLOW}
 )
 
-# integer
-FetchContent_Declare(
-    boost_integer
+FetchContent_Declare(boost_integer
     GIT_REPOSITORY https://github.com/boostorg/integer.git
-    GIT_TAG        boost-1.89.0
-    GIT_SHALLOW    TRUE
+    GIT_TAG ${BOOST_TAG}
+    GIT_SHALLOW ${BOOST_SHALLOW}
 )
 
-# algorithm
-FetchContent_Declare(
-    boost_algorithm
+FetchContent_Declare(boost_algorithm
     GIT_REPOSITORY https://github.com/boostorg/algorithm.git
-    GIT_TAG        boost-1.89.0
-    GIT_SHALLOW    TRUE
+    GIT_TAG ${BOOST_TAG}
+    GIT_SHALLOW ${BOOST_SHALLOW}
 )
 
-# COMMENTED OUT: boost_rational - unused (all code using boost::rational is commented out)
-# FetchContent_Declare(
-#     boost_rational
-#     GIT_REPOSITORY https://github.com/boostorg/rational.git
-#     GIT_TAG        boost-1.89.0
-#     GIT_SHALLOW    TRUE
-# )
-
-# COMMENTED OUT: boost_safe_numerics - unused (all code using boost::safe_numerics is commented out)
-# FetchContent_Declare(
-#     boost_safe_numerics
-#     GIT_REPOSITORY https://github.com/boostorg/safe_numerics.git
-#     GIT_TAG        boost-1.89.0
-#     GIT_SHALLOW    TRUE
-# )
-
-# COMMENTED OUT: boost_utility - only needed for boost_rational (which is unused)
-# FetchContent_Declare(
-#     boost_utility
-#     GIT_REPOSITORY https://github.com/boostorg/utility.git
-#     GIT_TAG        boost-1.89.0
-#     GIT_SHALLOW    TRUE
-# )
-
-# Make all dependencies available (core dependencies first)
+# Make dependencies available
 FetchContent_MakeAvailable(
-    spdlog 
-    argparse 
-    boost_config
-    boost_predef
-    boost_assert
-    boost_static_assert
-    boost_throw_exception
-    boost_type_traits
-    boost_core
-    boost_multiprecision 
-    boost_math 
-    boost_integer 
-    boost_algorithm
-    # boost_rational - commented out (unused)
-    # boost_safe_numerics - commented out (unused)
-    # boost_utility - commented out (only needed for boost_rational)
+    spdlog argparse
+    boost_config boost_predef boost_assert boost_static_assert
+    boost_throw_exception boost_type_traits boost_core
+    boost_multiprecision boost_math boost_integer boost_algorithm
 )
 
-message(STATUS "Using Boost 1.89.0 headers (from FetchContent)")
-    set(BOOST_LOCAL_FOUND TRUE)
+message(STATUS "Using Boost 1.89.0 headers")
 
-# Find GMP library for arbitrary precision rational numbers
-# Check for GMP_ROOT environment variable (set by CI for Homebrew installations)
-if(DEFINED ENV{GMP_ROOT})
-    set(GMP_ROOT $ENV{GMP_ROOT} CACHE PATH "GMP root directory")
-    message(STATUS "Using GMP_ROOT from environment: ${GMP_ROOT}")
-endif()
-
-# Try pkg-config first, then fall back to find_library
+# Find GMP library
 find_package(PkgConfig QUIET)
 if(PkgConfig_FOUND)
     pkg_check_modules(GMP QUIET gmp)
-    # Also find gmpxx (C++ wrapper) which is needed for stream operators
-    find_library(GMPXX_LIBRARIES
-        NAMES gmpxx
-        PATHS
-        /usr/lib
-        /usr/lib/x86_64-linux-gnu
-        /usr/local/lib
-        /opt/local/lib
-    )
-    if(GMP_FOUND AND GMPXX_LIBRARIES)
-        set(GMP_LIBRARIES ${GMP_LIBRARIES} ${GMPXX_LIBRARIES})
-    endif()
-    # pkg-config might not set GMP_INCLUDE_DIR, so ensure it's set
-    # pkg_check_modules sets GMP_INCLUDE_DIRS (plural), not GMP_INCLUDE_DIR (singular)
-    if(GMP_FOUND AND (NOT GMP_INCLUDE_DIR OR GMP_INCLUDE_DIR STREQUAL ""))
+    if(GMP_FOUND)
+        # pkg_check_modules sets GMP_INCLUDE_DIRS (plural), extract to GMP_INCLUDE_DIR (singular)
         if(GMP_INCLUDE_DIRS)
-            # Use the first include directory from pkg-config
             list(GET GMP_INCLUDE_DIRS 0 GMP_INCLUDE_DIR)
-            message(STATUS "Using GMP_INCLUDE_DIR from pkg-config: ${GMP_INCLUDE_DIR}")
+            message(STATUS "Found GMP via pkg-config: include=${GMP_INCLUDE_DIR}, libs=${GMP_LIBRARIES}")
         else()
-            # pkg-config didn't provide it, unset GMP_FOUND to trigger manual search
+            # pkg-config found GMP but didn't provide include dirs, unset to trigger manual search
             set(GMP_FOUND FALSE)
-            message(STATUS "pkg-config found GMP but didn't provide GMP_INCLUDE_DIRS, falling back to manual search")
+            message(STATUS "pkg-config found GMP but no include dirs, falling back to manual search")
+        endif()
+        
+        # Find gmpxx library (C++ wrapper)
+        if(GMP_FOUND)
+            find_library(GMPXX_LIB NAMES gmpxx
+                PATHS ${GMP_LIBRARY_DIRS}
+                      /usr/lib /usr/lib/x86_64-linux-gnu
+                      /usr/local/lib /opt/local/lib
+                      /opt/homebrew/lib
+            )
+            if(GMPXX_LIB)
+                list(APPEND GMP_LIBRARIES ${GMPXX_LIB})
+            endif()
         endif()
     endif()
 endif()
 
+# Define library search paths (used by both pkg-config fallback and static linking)
+set(GMP_LIB_SEARCH_PATHS
+    /usr/lib
+    /usr/lib/x86_64-linux-gnu
+    /usr/local/lib
+    /opt/local/lib
+    /opt/homebrew/lib
+)
+
+# Use environment variables if set
+if(DEFINED ENV{GMP_ROOT})
+    list(INSERT GMP_LIB_SEARCH_PATHS 0 "$ENV{GMP_ROOT}/lib")
+endif()
+if(DEFINED ENV{GMP_LIBRARIES_DIR})
+    list(INSERT GMP_LIB_SEARCH_PATHS 0 "$ENV{GMP_LIBRARIES_DIR}")
+endif()
+
+# Fallback: if GMP_FOUND is TRUE but GMP_INCLUDE_DIR is missing, search for it
+if(GMP_FOUND AND (NOT GMP_INCLUDE_DIR OR GMP_INCLUDE_DIR STREQUAL ""))
+    message(STATUS "GMP_FOUND is TRUE but GMP_INCLUDE_DIR missing, searching for header...")
+    find_path(GMP_INCLUDE_DIR NAMES gmpxx.h
+        PATHS
+            /usr/include
+            /usr/local/include
+            /opt/local/include
+            /opt/homebrew/include
+    )
+    if(GMP_INCLUDE_DIR)
+        message(STATUS "Found GMP_INCLUDE_DIR via fallback search: ${GMP_INCLUDE_DIR}")
+    endif()
+endif()
+
+# Manual GMP search if pkg-config failed
 if(NOT GMP_FOUND)
-    # Fall back to manual search
-    if(APPLE)
-        # macOS: Check GMP_INCLUDE_DIR environment variable FIRST (set by CI)
-        # If set, use it directly without searching
-        if(DEFINED ENV{GMP_INCLUDE_DIR} AND NOT "$ENV{GMP_INCLUDE_DIR}" STREQUAL "")
-            set(GMP_INCLUDE_DIR $ENV{GMP_INCLUDE_DIR})
-            message(STATUS "Using GMP_INCLUDE_DIR directly from environment: ${GMP_INCLUDE_DIR}")
-            # Verify the header exists
-            if(NOT EXISTS "${GMP_INCLUDE_DIR}/gmpxx.h")
-                message(WARNING "GMP_INCLUDE_DIR set but gmpxx.h not found at: ${GMP_INCLUDE_DIR}/gmpxx.h")
-                unset(GMP_INCLUDE_DIR)
-            else()
-                message(STATUS "Verified GMP header exists: ${GMP_INCLUDE_DIR}/gmpxx.h")
-            endif()
-        endif()
-        
-        # If GMP_INCLUDE_DIR not set from environment, search for it
-        if(NOT GMP_INCLUDE_DIR OR GMP_INCLUDE_DIR STREQUAL "")
-            # Determine search paths
-            if(DEFINED ENV{GMP_ROOT})
-                set(SEARCH_PATHS $ENV{GMP_ROOT}/include)
-                message(STATUS "Searching for GMP_INCLUDE_DIR using GMP_ROOT from environment: $ENV{GMP_ROOT}")
-            elseif(DEFINED GMP_ROOT)
-                set(SEARCH_PATHS ${GMP_ROOT}/include)
-                message(STATUS "Searching for GMP_INCLUDE_DIR using GMP_ROOT variable: ${GMP_ROOT}")
-            else()
-                set(SEARCH_PATHS /opt/homebrew/include /usr/local/include /opt/local/include)
-                message(STATUS "Searching for GMP_INCLUDE_DIR in default Homebrew paths: ${SEARCH_PATHS}")
-            endif()
-            
-            # Look for the C++ header file
-            find_path(GMP_INCLUDE_DIR NAMES gmpxx.h
-                PATHS
-                    ${SEARCH_PATHS}
-            )
-        endif()
-        
-        # Set library search paths
-        if(DEFINED ENV{GMP_LIBRARIES_DIR} AND NOT "$ENV{GMP_LIBRARIES_DIR}" STREQUAL "")
-            set(LIB_SEARCH_PATHS $ENV{GMP_LIBRARIES_DIR})
-            message(STATUS "Using GMP_LIBRARIES_DIR from environment: ${LIB_SEARCH_PATHS}")
-        elseif(DEFINED ENV{GMP_ROOT})
-            set(LIB_SEARCH_PATHS $ENV{GMP_ROOT}/lib)
-        elseif(DEFINED GMP_ROOT)
-            set(LIB_SEARCH_PATHS ${GMP_ROOT}/lib)
-        else()
-            set(LIB_SEARCH_PATHS /opt/homebrew/lib /usr/local/lib /opt/local/lib)
-        endif()
-        
-        message(STATUS "Searching for GMP libraries in: ${LIB_SEARCH_PATHS}")
-        
-        # Look for both the C library and the C++ library
-        find_library(GMP_LIB NAMES gmp PATHS ${LIB_SEARCH_PATHS})
-        find_library(GMPXX_LIB NAMES gmpxx PATHS ${LIB_SEARCH_PATHS})
-        
-        # Combine them
-        if(GMP_LIB AND GMPXX_LIB)
-            set(GMP_LIBRARIES ${GMP_LIB} ${GMPXX_LIB})
-        endif()
-    else()
-        # Linux: Check standard paths
-        find_path(GMP_INCLUDE_DIR NAMES gmpxx.h
-            PATHS
-                /usr/include
-                /usr/local/include
-            NO_DEFAULT_PATH
-        )
-        
-        find_library(GMP_LIBRARIES
-            NAMES gmp
-            PATHS
-                /usr/lib
-                /usr/lib/x86_64-linux-gnu
-                /usr/local/lib
-            NO_DEFAULT_PATH
-        )
-        
-        find_library(GMPXX_LIBRARIES
-            NAMES gmpxx
-            PATHS
-                /usr/lib
-                /usr/lib/x86_64-linux-gnu
-                /usr/local/lib
-            NO_DEFAULT_PATH
-        )
+    # Search paths
+    set(GMP_SEARCH_PATHS
+        /usr/include
+        /usr/local/include
+        /opt/local/include
+        /opt/homebrew/include
+    )
+    
+    # Use environment variables if set
+    if(DEFINED ENV{GMP_ROOT})
+        list(INSERT GMP_SEARCH_PATHS 0 "$ENV{GMP_ROOT}/include")
     endif()
     
-    # Also try with default paths if not found (only for non-Apple platforms)
-    if(NOT APPLE)
-        if(NOT GMP_INCLUDE_DIR)
-            find_path(GMP_INCLUDE_DIR NAMES gmpxx.h)
-        endif()
-        if(NOT GMP_LIBRARIES)
-            find_library(GMP_LIBRARIES NAMES gmp)
-        endif()
-        if(NOT GMPXX_LIBRARIES)
-            find_library(GMPXX_LIBRARIES NAMES gmpxx)
-        endif()
-        
-        if(GMP_INCLUDE_DIR AND GMP_LIBRARIES AND GMPXX_LIBRARIES)
-            set(GMP_FOUND TRUE)
-            set(GMP_LIBRARIES ${GMP_LIBRARIES} ${GMPXX_LIBRARIES})
-        endif()
-    else()
-        # For macOS, we already combined GMP_LIB and GMPXX_LIB into GMP_LIBRARIES
-        if(GMP_INCLUDE_DIR AND GMP_LIBRARIES)
-            set(GMP_FOUND TRUE)
-            message(STATUS "GMP found on macOS: include=${GMP_INCLUDE_DIR}, libs=${GMP_LIBRARIES}")
-        endif()
+    if(DEFINED ENV{GMP_INCLUDE_DIR})
+        list(INSERT GMP_SEARCH_PATHS 0 "$ENV{GMP_INCLUDE_DIR}")
+    endif()
+    
+    # Find headers
+    find_path(GMP_INCLUDE_DIR
+        NAMES gmpxx.h
+        PATHS ${GMP_SEARCH_PATHS}
+    )
+    
+    # Find libraries
+    find_library(GMP_LIB
+        NAMES gmp
+        PATHS ${GMP_LIB_SEARCH_PATHS}
+    )
+    
+    find_library(GMPXX_LIB
+        NAMES gmpxx
+        PATHS ${GMP_LIB_SEARCH_PATHS}
+    )
+    
+    if(GMP_INCLUDE_DIR AND GMP_LIB AND GMPXX_LIB)
+        set(GMP_FOUND TRUE)
+        set(GMP_LIBRARIES ${GMP_LIB} ${GMPXX_LIB})
+        message(STATUS "Found GMP manually: include=${GMP_INCLUDE_DIR}, libs=${GMP_LIBRARIES}")
     endif()
 endif()
 
-if(GMP_FOUND)
-    message(STATUS "Found GMP: ${GMP_LIBRARIES}")
-    message(STATUS "GMP include dir: ${GMP_INCLUDE_DIR}")
-    # Validate that GMP_INCLUDE_DIR is set and non-empty
-    # If pkg-config found GMP but didn't set GMP_INCLUDE_DIR, search for it now
-    if(NOT GMP_INCLUDE_DIR OR GMP_INCLUDE_DIR STREQUAL "GMP_INCLUDE_DIR-NOTFOUND" OR GMP_INCLUDE_DIR STREQUAL "")
-        message(STATUS "GMP_FOUND is TRUE but GMP_INCLUDE_DIR is missing, searching for it...")
-        # Try common include paths
-        find_path(GMP_INCLUDE_DIR NAMES gmpxx.h
-            PATHS
-                /usr/include
-                /usr/local/include
-                /opt/local/include
-                /opt/homebrew/include
-        )
-        # If still not found, try without NO_DEFAULT_PATH to allow compiler defaults
-        if(NOT GMP_INCLUDE_DIR OR GMP_INCLUDE_DIR STREQUAL "GMP_INCLUDE_DIR-NOTFOUND")
-            find_path(GMP_INCLUDE_DIR NAMES gmpxx.h)
-        endif()
-    endif()
-    # Final validation
-    if(NOT GMP_INCLUDE_DIR OR GMP_INCLUDE_DIR STREQUAL "GMP_INCLUDE_DIR-NOTFOUND" OR GMP_INCLUDE_DIR STREQUAL "")
-        message(FATAL_ERROR "GMP_INCLUDE_DIR is not set or invalid: '${GMP_INCLUDE_DIR}'")
-    endif()
-    # Verify the header file actually exists
-    if(NOT EXISTS "${GMP_INCLUDE_DIR}/gmpxx.h")
-        message(FATAL_ERROR "GMP header file not found at: ${GMP_INCLUDE_DIR}/gmpxx.h")
-    endif()
-    message(STATUS "Verified GMP header exists: ${GMP_INCLUDE_DIR}/gmpxx.h")
-    message(STATUS "Using GMP mpq_class backend for arbitrary precision rational numbers")
-else()
-    message(FATAL_ERROR "GMP library not found. Please install GMP: sudo apt-get install libgmp-dev libgmpxx4ldbl (or libgmpxx-dev)")
+# Verify GMP was found
+if(NOT GMP_FOUND)
+    message(FATAL_ERROR "GMP not found. Install with: sudo apt-get install libgmp-dev (Linux) or brew install gmp (macOS)")
+endif()
+
+if(NOT GMP_INCLUDE_DIR OR GMP_INCLUDE_DIR STREQUAL "")
+    message(FATAL_ERROR "GMP found but GMP_INCLUDE_DIR is not set. This is a configuration error.")
+endif()
+
+if(NOT GMP_LIBRARIES OR GMP_LIBRARIES STREQUAL "")
+    message(FATAL_ERROR "GMP found but GMP_LIBRARIES is not set. This is a configuration error.")
+endif()
+
+message(STATUS "GMP configuration:")
+message(STATUS "  Include directory: ${GMP_INCLUDE_DIR}")
+message(STATUS "  Libraries: ${GMP_LIBRARIES}")
+
+# Verify header exists
+if(NOT EXISTS "${GMP_INCLUDE_DIR}/gmpxx.h")
+    message(FATAL_ERROR "GMP header not found: ${GMP_INCLUDE_DIR}/gmpxx.h")
 endif()
 
 # Static linking support
 if(ENABLE_STATIC_LINKING)
-    message(STATUS "Static linking enabled - searching for static GMP libraries")
+    message(STATUS "Static linking enabled")
     
-    # Find static GMP libraries
-    # On Linux, look in standard library paths
-    # On macOS, check both Homebrew locations (Intel and Apple Silicon)
-    if(APPLE)
-        # macOS: Check Homebrew paths (Apple Silicon first, then Intel)
-        find_library(GMP_STATIC_LIB
-            NAMES libgmp.a gmp
-            PATHS
-                /opt/homebrew/lib
-                /usr/local/lib
-                /opt/local/lib
-            NO_DEFAULT_PATH
-        )
-        
-        find_library(GMPXX_STATIC_LIB
-            NAMES libgmpxx.a gmpxx
-            PATHS
-                /opt/homebrew/lib
-                /usr/local/lib
-                /opt/local/lib
-            NO_DEFAULT_PATH
-        )
-    else()
-        # Linux: Check standard library paths
-        find_library(GMP_STATIC_LIB
-            NAMES libgmp.a gmp
-            PATHS
-                /usr/lib
-                /usr/lib/x86_64-linux-gnu
-                /usr/lib64
-                /usr/local/lib
-            NO_DEFAULT_PATH
-        )
-        
-        find_library(GMPXX_STATIC_LIB
-            NAMES libgmpxx.a gmpxx
-            PATHS
-                /usr/lib
-                /usr/lib/x86_64-linux-gnu
-                /usr/lib64
-                /usr/local/lib
-            NO_DEFAULT_PATH
-        )
-    endif()
+    find_library(GMP_STATIC NAMES libgmp.a
+        PATHS ${GMP_LIB_SEARCH_PATHS}
+    )
+    find_library(GMPXX_STATIC NAMES libgmpxx.a
+        PATHS ${GMP_LIB_SEARCH_PATHS}
+    )
     
-    # Also try with default paths if not found
-    if(NOT GMP_STATIC_LIB)
-        find_library(GMP_STATIC_LIB NAMES libgmp.a gmp)
-    endif()
-    if(NOT GMPXX_STATIC_LIB)
-        find_library(GMPXX_STATIC_LIB NAMES libgmpxx.a gmpxx)
-    endif()
-    
-    if(GMP_STATIC_LIB AND GMPXX_STATIC_LIB)
-        set(GMP_LIBRARIES ${GMP_STATIC_LIB} ${GMPXX_STATIC_LIB})
-        message(STATUS "Found static GMP libraries: ${GMP_LIBRARIES}")
+    if(GMP_STATIC AND GMPXX_STATIC)
+        set(GMP_LIBRARIES ${GMP_STATIC} ${GMPXX_STATIC})
+        message(STATUS "Using static GMP: ${GMP_LIBRARIES}")
         
-        # Add platform-specific static linker flags
         if(UNIX AND NOT APPLE)
-            # Linux: Only statically link GMP and standard C++ libraries
-            # Do NOT use -static as it tries to link glibc statically (often fails)
-            # Instead, link GMP statically and use static libgcc/libstdc++
             set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++")
-            message(STATUS "Linux static linking enabled: GMP static, libgcc/libstdc++ static")
         elseif(APPLE)
-            # macOS: static libgcc/libstdc++ but dynamic system libraries
             set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++")
-            message(STATUS "macOS static linking enabled: -static-libgcc -static-libstdc++")
         endif()
     else()
-        message(WARNING "Static linking requested but static GMP libraries not found.")
-        message(WARNING "GMP_STATIC_LIB: ${GMP_STATIC_LIB}")
-        message(WARNING "GMPXX_STATIC_LIB: ${GMPXX_STATIC_LIB}")
-        message(WARNING "Falling back to dynamic linking. Binary will require GMP to be installed.")
-        if(ENABLE_STATIC_LINKING)
-            message(WARNING "Consider installing static GMP libraries or building GMP from source with --enable-static")
-        endif()
+        message(WARNING "Static GMP not found, using dynamic")
     endif()
 endif()
 
-
-# Build the core library
+# Build library
 add_library(fracessa_lib
     src/fracessa.cpp
     src/findeq.cpp
     src/checkstab.cpp
 )
 
-# Set library properties
 set_target_properties(fracessa_lib PROPERTIES
     VERSION ${PROJECT_VERSION}
     SOVERSION ${PROJECT_VERSION_MAJOR}
 )
 
-# Include directories for the library
+# Include directories
 target_include_directories(fracessa_lib
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/fracessa>
         $<BUILD_INTERFACE:${argparse_SOURCE_DIR}/include>
         $<BUILD_INTERFACE:${spdlog_SOURCE_DIR}/include>
+        ${GMP_INCLUDE_DIR}
     PRIVATE
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-# Add GMP include directory only if it's set and valid
-if(GMP_INCLUDE_DIR AND NOT GMP_INCLUDE_DIR STREQUAL "GMP_INCLUDE_DIR-NOTFOUND")
-    target_include_directories(fracessa_lib
-        PUBLIC
-            ${GMP_INCLUDE_DIR}
-    )
-    message(STATUS "Added GMP include directory to fracessa_lib: ${GMP_INCLUDE_DIR}")
-else()
-    message(FATAL_ERROR "Cannot add GMP include directory - GMP_INCLUDE_DIR is invalid: ${GMP_INCLUDE_DIR}")
-endif()
-
-# Boost libraries as system headers (suppresses deprecation warnings)
-target_include_directories(fracessa_lib
-    SYSTEM PUBLIC
-        # Boost libraries (individual repos, core dependencies first)
-        $<BUILD_INTERFACE:${boost_config_SOURCE_DIR}/include>
-        $<BUILD_INTERFACE:${boost_predef_SOURCE_DIR}/include>
-        $<BUILD_INTERFACE:${boost_assert_SOURCE_DIR}/include>
-        $<BUILD_INTERFACE:${boost_static_assert_SOURCE_DIR}/include>
-        $<BUILD_INTERFACE:${boost_throw_exception_SOURCE_DIR}/include>
-        $<BUILD_INTERFACE:${boost_type_traits_SOURCE_DIR}/include>
-        $<BUILD_INTERFACE:${boost_core_SOURCE_DIR}/include>
-        $<BUILD_INTERFACE:${boost_multiprecision_SOURCE_DIR}/include>
-        $<BUILD_INTERFACE:${boost_math_SOURCE_DIR}/include>
-        $<BUILD_INTERFACE:${boost_integer_SOURCE_DIR}/include>
-        $<BUILD_INTERFACE:${boost_algorithm_SOURCE_DIR}/include>
-        # boost_rational - commented out (unused)
-        # boost_safe_numerics - commented out (unused)
-        # boost_utility - commented out (only needed for boost_rational)
+# Boost as system headers
+target_include_directories(fracessa_lib SYSTEM PUBLIC
+    ${boost_config_SOURCE_DIR}/include
+    ${boost_predef_SOURCE_DIR}/include
+    ${boost_assert_SOURCE_DIR}/include
+    ${boost_static_assert_SOURCE_DIR}/include
+    ${boost_throw_exception_SOURCE_DIR}/include
+    ${boost_type_traits_SOURCE_DIR}/include
+    ${boost_core_SOURCE_DIR}/include
+    ${boost_multiprecision_SOURCE_DIR}/include
+    ${boost_math_SOURCE_DIR}/include
+    ${boost_integer_SOURCE_DIR}/include
+    ${boost_algorithm_SOURCE_DIR}/include
 )
 
-# Suppress Boost deprecation pragma messages
-target_compile_definitions(fracessa_lib PRIVATE BOOST_ALLOW_DEPRECATED_HEADERS)
+target_compile_definitions(fracessa_lib PRIVATE
+    BOOST_ALLOW_DEPRECATED_HEADERS
+)
 
-# Link GMP library
-target_link_libraries(fracessa_lib PRIVATE ${GMP_LIBRARIES})
+target_link_libraries(fracessa_lib PRIVATE
+    ${GMP_LIBRARIES}
+)
 
-
-# Platform-specific configuration
-if(UNIX AND NOT APPLE)
-    # Linux executable
-    add_executable(fracessa
-        src/main.cpp
-    )
-
-    target_include_directories(fracessa PRIVATE 
+# Build executable (only on supported platforms)
+if(UNIX OR WIN32 OR MSVC OR MSYS OR MINGW)
+    add_executable(fracessa src/main.cpp)
+    
+    target_include_directories(fracessa PRIVATE
         ${argparse_SOURCE_DIR}/include
         ${GMP_INCLUDE_DIR}
     )
-    target_include_directories(fracessa SYSTEM PRIVATE 
+    
+    target_include_directories(fracessa SYSTEM PRIVATE
         ${boost_math_SOURCE_DIR}/include
     )
-    target_compile_definitions(fracessa PRIVATE BOOST_ALLOW_DEPRECATED_HEADERS)
-    target_link_libraries(fracessa PRIVATE fracessa_lib ${GMP_LIBRARIES})
-
-    # Install targets
-    install(TARGETS fracessa fracessa_lib
-        RUNTIME DESTINATION bin
-        LIBRARY DESTINATION lib
-        ARCHIVE DESTINATION lib
+    
+    target_compile_definitions(fracessa PRIVATE
+        BOOST_ALLOW_DEPRECATED_HEADERS
     )
-
-elseif(WIN32 OR MSVC OR MSYS OR MINGW)
+    
+    target_link_libraries(fracessa PRIVATE
+        fracessa_lib
+        ${GMP_LIBRARIES}
+    )
+    
     # Windows-specific linker flags
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++ -static")
-
-    # Windows executable
-    add_executable(fracessa
-        src/main.cpp
-    )
-
-    target_include_directories(fracessa PRIVATE 
-        ${argparse_SOURCE_DIR}/include
-        ${GMP_INCLUDE_DIR}
-    )
-    target_include_directories(fracessa SYSTEM PRIVATE 
-        ${boost_math_SOURCE_DIR}/include
-    )
-    target_compile_definitions(fracessa PRIVATE BOOST_ALLOW_DEPRECATED_HEADERS)
-    target_link_libraries(fracessa PRIVATE fracessa_lib ${GMP_LIBRARIES})
-
-    # Install targets
-    install(TARGETS fracessa
+    if(WIN32 OR MSVC OR MSYS OR MINGW)
+        set_target_properties(fracessa PROPERTIES
+            LINK_FLAGS "-static-libgcc -static-libstdc++ -static"
+        )
+    endif()
+    
+    # Install
+    install(TARGETS fracessa fracessa_lib
         RUNTIME DESTINATION bin
         LIBRARY DESTINATION lib
         ARCHIVE DESTINATION lib
@@ -643,19 +410,11 @@ install(DIRECTORY include/fracessa/
     FILES_MATCHING PATTERN "*.hpp"
 )
 
-# Enable testing if requested
-if(ENABLE_TESTING)
-    enable_testing()
-    # Add test subdirectory if tests are added later
-    # add_subdirectory(tests)
-endif()
-
-# Testing (optional, enabled with -DBUILD_TESTING=ON)
+# Testing
 if(BUILD_TESTING)
     enable_testing()
     
-    FetchContent_Declare(
-        googletest
+    FetchContent_Declare(googletest
         GIT_REPOSITORY https://github.com/google/googletest.git
         GIT_TAG v1.14.0
     )
