@@ -464,11 +464,8 @@ inline Matrix<rational> convert_small_to_rational(const Matrix<small_rational>& 
     Matrix<rational> result(A.rows(), A.cols());
     for (size_t i = 0; i < A.rows(); ++i) {
         for (size_t j = 0; j < A.cols(); ++j) {
-            // Convert small_rational to rational
-            small_rational val = A(i, j);
-            int64_t num = static_cast<int64_t>(val.numerator());
-            int64_t den = static_cast<int64_t>(val.denominator());
-            result(i, j) = rational(num) / rational(den);
+            // Convert small_rational to rational using the conversion function from types_rational.hpp
+            result(i, j) = small_to_rational(A(i, j));
         }
     }
     return result;
