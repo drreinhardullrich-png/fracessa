@@ -275,30 +275,71 @@ endif()
 
 if(NOT GMP_FOUND)
     # Fall back to manual search
-    find_path(GMP_INCLUDE_DIR NAMES gmpxx.h
-        PATHS
-        /usr/include
-        /usr/local/include
-        /opt/local/lib
-    )
+    if(APPLE)
+        # macOS: Check Homebrew paths (Apple Silicon first, then Intel)
+        find_path(GMP_INCLUDE_DIR NAMES gmpxx.h
+            PATHS
+                /opt/homebrew/include
+                /usr/local/include
+                /opt/local/include
+            NO_DEFAULT_PATH
+        )
+        
+        find_library(GMP_LIBRARIES
+            NAMES gmp
+            PATHS
+                /opt/homebrew/lib
+                /usr/local/lib
+                /opt/local/lib
+            NO_DEFAULT_PATH
+        )
+        
+        find_library(GMPXX_LIBRARIES
+            NAMES gmpxx
+            PATHS
+                /opt/homebrew/lib
+                /usr/local/lib
+                /opt/local/lib
+            NO_DEFAULT_PATH
+        )
+    else()
+        # Linux: Check standard paths
+        find_path(GMP_INCLUDE_DIR NAMES gmpxx.h
+            PATHS
+                /usr/include
+                /usr/local/include
+            NO_DEFAULT_PATH
+        )
+        
+        find_library(GMP_LIBRARIES
+            NAMES gmp
+            PATHS
+                /usr/lib
+                /usr/lib/x86_64-linux-gnu
+                /usr/local/lib
+            NO_DEFAULT_PATH
+        )
+        
+        find_library(GMPXX_LIBRARIES
+            NAMES gmpxx
+            PATHS
+                /usr/lib
+                /usr/lib/x86_64-linux-gnu
+                /usr/local/lib
+            NO_DEFAULT_PATH
+        )
+    endif()
     
-    find_library(GMP_LIBRARIES
-        NAMES gmp
-        PATHS
-        /usr/lib
-        /usr/lib/x86_64-linux-gnu
-        /usr/local/lib
-        /opt/local/lib
-    )
-    
-    find_library(GMPXX_LIBRARIES
-        NAMES gmpxx
-        PATHS
-        /usr/lib
-        /usr/lib/x86_64-linux-gnu
-        /usr/local/lib
-        /opt/local/lib
-    )
+    # Also try with default paths if not found
+    if(NOT GMP_INCLUDE_DIR)
+        find_path(GMP_INCLUDE_DIR NAMES gmpxx.h)
+    endif()
+    if(NOT GMP_LIBRARIES)
+        find_library(GMP_LIBRARIES NAMES gmp)
+    endif()
+    if(NOT GMPXX_LIBRARIES)
+        find_library(GMPXX_LIBRARIES NAMES gmpxx)
+    endif()
     
     if(GMP_INCLUDE_DIR AND GMP_LIBRARIES AND GMPXX_LIBRARIES)
         set(GMP_FOUND TRUE)
