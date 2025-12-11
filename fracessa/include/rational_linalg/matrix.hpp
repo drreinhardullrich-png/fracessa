@@ -450,10 +450,11 @@ template<typename T>
 inline Matrix<double> convert_t_to_double(const Matrix<T>& A)
 {
     Matrix<double> result(A.rows(), A.cols());
-    for (size_t i = 0; i < A.rows(); ++i) {
-        for (size_t j = 0; j < A.cols(); ++j) {
-            result(i, j) = rational_to_double(A(i, j));
-        }
+    const size_t n = A.rows() * A.cols();
+    const T* src = A.data();
+    double* dst = result.data();
+    for (size_t i = 0; i < n; ++i) {
+        dst[i] = rational_to_double(src[i]);
     }
     return result;
 }
@@ -462,11 +463,12 @@ inline Matrix<double> convert_t_to_double(const Matrix<T>& A)
 inline Matrix<rational> convert_small_to_rational(const Matrix<small_rational>& A)
 {
     Matrix<rational> result(A.rows(), A.cols());
-    for (size_t i = 0; i < A.rows(); ++i) {
-        for (size_t j = 0; j < A.cols(); ++j) {
-            // Convert small_rational to rational using the conversion function from types_rational.hpp
-            result(i, j) = small_to_rational(A(i, j));
-        }
+    const size_t n = A.rows() * A.cols();
+    const small_rational* src = A.data();
+    rational* dst = result.data();
+    for (size_t i = 0; i < n; ++i) {
+        // Convert small_rational to rational using the conversion function from types_rational.hpp
+        dst[i] = small_to_rational(src[i]);
     }
     return result;
 }
