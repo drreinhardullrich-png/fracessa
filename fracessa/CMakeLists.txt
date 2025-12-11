@@ -311,7 +311,10 @@ if(ENABLE_STATIC_LINKING)
         message(STATUS "Using static GMP: ${GMP_LIBRARIES}")
         
         if(UNIX AND NOT APPLE)
-            # Linux: static link libgcc and libstdc++ but not glibc
+            # Linux: static link libgcc and libstdc++ but NOT glibc
+            # Static glibc causes NSS/DNS issues, license problems, and version lock-in
+            # Dynamic glibc is fine - it's always present on Linux systems
+            # Building on Ubuntu 20.04 (glibc 2.31) ensures compatibility with most systems (2020+)
             set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++")
         elseif(APPLE)
             # macOS: clang doesn't support -static-libgcc/-static-libstdc++
