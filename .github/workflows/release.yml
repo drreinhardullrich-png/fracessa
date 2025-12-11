@@ -53,11 +53,11 @@ jobs:
       - name: Install Dependencies (Windows)
         if: matrix.os == 'windows-latest'
         run: |
-          # Install GMP via vcpkg
+          # Install GMP via vcpkg (static variant)
           git clone https://github.com/Microsoft/vcpkg.git C:/vcpkg
           C:/vcpkg/bootstrap-vcpkg.bat
           C:/vcpkg/vcpkg integrate install
-          C:/vcpkg/vcpkg install gmp:x64-windows
+          C:/vcpkg/vcpkg install gmp:x64-windows-static
         shell: cmd
       
       # ------------------------------------------------
@@ -69,7 +69,8 @@ jobs:
         run: |
           cmake -B build -S . \
             -DCMAKE_BUILD_TYPE=Release \
-            -DBUILD_TESTING=OFF
+            -DBUILD_TESTING=OFF \
+            -DENABLE_STATIC_LINKING=ON
       
       - name: Configure CMake (Windows)
         if: matrix.os == 'windows-latest'
@@ -78,6 +79,7 @@ jobs:
           cmake -B build -S . \
             -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_TESTING=OFF \
+            -DENABLE_STATIC_LINKING=ON \
             -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
         shell: cmd
       
@@ -90,7 +92,64 @@ jobs:
           cmake --build build --config Release --parallel
       
       # ------------------------------------------------
-      # 5. Package Binary
+      # 5. Verify Static Linking
+      # ------------------------------------------------
+      - name: Verify Static Linking (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        working-directory: fracessa
+        run: |
+          if command -v ldd &> /dev/null; then
+            echo "Checking dynamic dependencies:"
+            ldd build/fracessa || echo "Binary is statically linked (no dynamic dependencies)"
+            # Check if libgmp is in the dependencies
+            if ldd build/fracessa 2>/dev/null | grep -q libgmp; then
+              echo "ERROR: Binary still depends on libgmp dynamically!"
+              exit 1
+            else
+              echo "SUCCESS: Binary is statically linked (no libgmp dependency)"
+            fi
+          else
+            echo "ldd not available, skipping verification"
+          fi
+      
+      - name: Verify Static Linking (macOS)
+        if: matrix.os == 'macos-latest'
+        working-directory: fracessa
+        run: |
+          if command -v otool &> /dev/null; then
+            echo "Checking dynamic dependencies:"
+            otool -L build/fracessa
+            # Check if libgmp is in the dependencies (should only see system libraries)
+            if otool -L build/fracessa | grep -q "libgmp"; then
+              echo "WARNING: Binary may still depend on libgmp dynamically"
+            else
+              echo "SUCCESS: Binary appears to be statically linked (no libgmp dependency)"
+            fi
+          else
+            echo "otool not available, skipping verification"
+          fi
+      
+      - name: Verify Static Linking (Windows)
+        if: matrix.os == 'windows-latest'
+        working-directory: fracessa
+        run: |
+          # Check if binary exists in Release directory
+          if exist build\Release\fracessa.exe (
+            echo Binary found in build\Release\fracessa.exe
+            set BINARY_PATH=build\Release\fracessa.exe
+          ) else if exist build\fracessa.exe (
+            echo Binary found in build\fracessa.exe
+            set BINARY_PATH=build\fracessa.exe
+          ) else (
+            echo ERROR: Binary not found!
+            exit /b 1
+          )
+          echo BINARY_PATH=%BINARY_PATH% >> %GITHUB_ENV%
+          echo "Binary location verified: %BINARY_PATH%"
+        shell: cmd
+      
+      # ------------------------------------------------
+      # 6. Package Binary
       # ------------------------------------------------
       - name: Package Binary (Linux/macOS)
         if: matrix.os != 'windows-latest'
@@ -106,15 +165,24 @@ jobs:
         if: matrix.os == 'windows-latest'
         working-directory: fracessa
         run: |
+          # Determine binary path (check both locations)
+          if exist build\Release\fracessa.exe (
+            set BINARY_PATH=build\Release\fracessa.exe
+          ) else if exist build\fracessa.exe (
+            set BINARY_PATH=build\fracessa.exe
+          ) else (
+            echo ERROR: Binary not found in expected locations!
+            exit /b 1
+          )
           # Create zip archive with binary
-          ARCHIVE_NAME="${{ matrix.artifact_name }}.zip"
-          powershell Compress-Archive -Path build/Release/fracessa.exe -DestinationPath $ARCHIVE_NAME
-          echo "ARCHIVE_NAME=$ARCHIVE_NAME" >> $GITHUB_ENV
-          echo "ARCHIVE_PATH=fracessa/$ARCHIVE_NAME" >> $GITHUB_ENV
+          set ARCHIVE_NAME={{ matrix.artifact_name }}.zip
+          powershell Compress-Archive -Path %BINARY_PATH% -DestinationPath %ARCHIVE_NAME%
+          echo ARCHIVE_NAME=%ARCHIVE_NAME% >> %GITHUB_ENV%
+          echo ARCHIVE_PATH=fracessa\%ARCHIVE_NAME% >> %GITHUB_ENV%
         shell: cmd
       
       # ------------------------------------------------
-      # 6. Upload Release Asset
+      # 7. Upload Release Asset
       # ------------------------------------------------
       - name: Upload Release Asset
         uses: softprops/action-gh-release@v2
@@ -124,4 +192,3 @@ jobs:
           prerelease: ${{ contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha') || contains(github.ref_name, 'rc') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-

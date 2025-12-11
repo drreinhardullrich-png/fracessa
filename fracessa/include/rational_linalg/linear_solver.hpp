@@ -137,9 +137,9 @@ public:
     bool solve(Matrix<double>& x) {
         const size_t n = M.rows();
 
-        const double errorbound = 1e-3 * n; // huge margin, false positives eliminated by rational check
+        const double errorbound = 1e-5 * n; // huge margin, false positives eliminated by rational check
 
-        const double epsilon = std::numeric_limits<double>::epsilon(); // * n; keep epsilon super small to avoid false negative. false positive will be detected by rational afterwards!!!
+        const double epsilon = 1e-15; //std::numeric_limits<double>::epsilon(); // * n; keep epsilon super small to avoid false negative. false positive will be detected by rational afterwards!!!
 
         // Standard Gaussian elimination with partial pivoting
         for (size_t k = 0; k < n - 1; ++k) {

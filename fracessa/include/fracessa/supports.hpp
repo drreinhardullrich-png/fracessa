@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <fracessa/bitset64.hpp>
 #include <boost/math/special_functions/binomial.hpp>
+#include <boost/integer/common_factor.hpp>
 
 // Force-inline hint (same as bitset64.hpp)
 #if defined(_MSC_VER)
@@ -44,11 +45,11 @@ public:
         // Populate supports based on is_cs_ flag
         if (is_cs_) {
             for (uint64_t bits = 1ULL; bits < (1ULL << dimension_); ++bits) {
-                bitset64 support(bits);
-                size_t current_index = support.count() - 1;
+                bitset64 support = bits;
+                size_t current_index = bs64::count(support) - 1;
                 if (is_coprime[current_index]) {
                     // Only add if it's the smallest representation (canonical form)
-                    if (support.is_smallest_representation(dimension_)) {
+                    if (bs64::is_smallest_representation(support, dimension_)) {
                         supports_[current_index].push_back(support);
                     }
                 } else {
@@ -57,8 +58,8 @@ public:
             }
         } else {
             for (uint64_t bits = 1ULL; bits < (1ULL << dimension_); ++bits) {
-                bitset64 support(bits);
-                supports_[support.count() - 1].push_back(support);
+                bitset64 support = bits;
+                supports_[bs64::count(support) - 1].push_back(support);
             }
         }
     }
@@ -73,7 +74,7 @@ public:
     /// Hot path - FORCE_INLINE for maximum performance
     FORCE_INLINE void remove_supersets(const bitset64& subset, uint64_t support_size = 0) noexcept {
         if (support_size == 0) {
-            support_size = subset.count();
+            support_size = bs64::count(subset);
         }
         for (size_t i = support_size; i < dimension_; ++i) { //index support_size means erase from support_size+1 on!!!
             auto& vec = supports_[i];
@@ -88,11 +89,35 @@ public:
                 std::remove_if(
                         start_it,
                         vec.end(),
-                    [=](const bitset64& x) { return subset.is_subset_of(x); }
+                    [=](const bitset64& x) { return bs64::is_subset_of(subset, x); }
                 ),
                     vec.end()
             );
             }
+        }
+    }
+    
+    /// Remove all supersets for a batch of subsets
+    /// More efficient than calling remove_supersets multiple times NOT TRUE!!!!!!
+    FORCE_INLINE void remove_supersets_batch(const std::vector<bitset64>& subset_list, size_t support_size) noexcept {
+        for (size_t i = support_size; i < dimension_; ++i) { //index support_size means erase from support_size+1 on!!!
+            auto& vec = supports_[i];
+            vec.erase(
+                std::remove_if(
+                    vec.begin(),
+                    vec.end(),
+                    [&](const bitset64& x) { 
+                        return std::any_of(
+                            subset_list.begin(), 
+                            subset_list.end(), 
+                            [&](const bitset64& s) { 
+                                return bs64::is_subset_of(s, x); 
+                            }
+                        ); 
+                    }
+                ),
+                vec.end()
+            );
         }
     }
     

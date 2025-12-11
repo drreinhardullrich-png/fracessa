@@ -4,7 +4,7 @@
 #include <exception>
 
 fracessa::fracessa(const rational_linalg::Matrix<small_rational>& matrix, bool is_cs, bool with_candidates, bool exact, bool full_support, bool with_log, int matrix_id)
-    : game_small_(matrix)
+    : matrix_server_(matrix)
     , dimension_(matrix.rows())
     , is_cs_(is_cs)
     , matrix_id_(matrix_id)
@@ -16,10 +16,6 @@ fracessa::fracessa(const rational_linalg::Matrix<small_rational>& matrix, bool i
     , supports_(dimension_, is_cs_)
     , logger_()
 {
-
-    if (!conf_exact_)
-        game_double_ = rational_linalg::convert_t_to_double(game_small_);
-
     if (conf_with_candidates_)
         candidates_.reserve(250 * dimension_);
 
@@ -41,7 +37,7 @@ fracessa::fracessa(const rational_linalg::Matrix<small_rational>& matrix, bool i
         }
         
         logger_->info("n={}", dimension_);
-        logger_->info("game matrix:\n{}", rational_linalg::matrix_to_log(game_small_));
+        logger_->info("game matrix:\n{}", rational_linalg::matrix_to_log(matrix_server_.get_game_matrix<small_rational>()));
     }
         
     // Initialize supports
@@ -49,9 +45,13 @@ fracessa::fracessa(const rational_linalg::Matrix<small_rational>& matrix, bool i
 
     if (conf_full_support_) {      
         // Search full support (dimension_)
+        // BATCH: supports_to_remove_.clear();
         for (const auto& support : supports_.get_supports(dimension_)) {
             search_one_support(support, dimension_);
         }
+        // BATCH: Batch remove all collected supersets
+        // supports_.remove_supersets_batch(supports_to_remove_, dimension_);
+        // supports_to_remove_.clear();
         if (ess_count_ > 0) 
             return;                
     }
@@ -60,10 +60,14 @@ fracessa::fracessa(const rational_linalg::Matrix<small_rational>& matrix, bool i
         if (conf_with_log_)
             logger_->info("Searching support size {}:", i);
 
+        // BATCH: supports_to_remove_.clear();
         const bool is_cs_and_coprime = is_cs_ && (boost::integer::gcd(i, dimension_) == 1);
         for (const auto& support : supports_.get_supports(i)) {
             search_one_support(support, i, is_cs_and_coprime);
         }
+        // BATCH: Batch remove all collected supersets for this support size
+        // supports_.remove_supersets_batch(supports_to_remove_, i);
+        // supports_to_remove_.clear();
     }
 }
 
@@ -71,29 +75,23 @@ fracessa::fracessa(const rational_linalg::Matrix<small_rational>& matrix, bool i
 void fracessa::search_one_support(const bitset64& support, size_t support_size, bool is_cs_and_coprime)
 {
     if (!conf_exact_) 
-            if (!find_candidate<double>(game_double_, support, support_size, subgame_augmented_double_))
+            if (!find_candidate<double>(support, support_size))
                 return;
 
-    if (use_small_) {
-        // Use small_rational (fast path)
+    // Try small_rational first (fast path)
         try {
-            if (!find_candidate<small_rational>(game_small_, support, support_size, subgame_augmented_small_))
+        if (!find_candidate<small_rational>(support, support_size))
                 return;
         } catch (const std::exception& e) {
             // Check if it's an overflow error
             std::string error_msg = e.what();
             if (error_msg.find("overflow") != std::string::npos) {
-                game_rational_ = rational_linalg::convert_small_to_rational(game_small_);
-                use_small_ = false;
-                if (!find_candidate<rational>(game_rational_, support, support_size, subgame_augmented_rational_))
+            // Fall back to rational precision
+            if (!find_candidate<rational>(support, support_size))
                     return;
             } else {              
                 throw;  // Re-throw if it's not an overflow error
             }
-        }
-    } else {
-        if (!find_candidate<rational>(game_rational_, support, support_size, subgame_augmented_rational_))
-            return;
     }
 
     candidate_.support_size = support_size;
@@ -103,23 +101,19 @@ void fracessa::search_one_support(const bitset64& support, size_t support_size, 
     if (conf_with_log_)
         logger_->info("Found candidate! Check stability:");
 
-    if (use_small_) {
+    // Try small_rational first (fast path)
         try {
-            check_stability<small_rational>(game_small_, bee_small_);
+        check_stability<small_rational>();
         } catch (const std::exception& e) {
             // Check if it's an overflow error
             std::string error_msg = e.what();
             if (error_msg.find("overflow") != std::string::npos) {
-                game_rational_ = rational_linalg::convert_small_to_rational(game_small_);
-                use_small_ = false;
-                check_stability<rational>(game_rational_, bee_rational_);
+            // Fall back to rational precision
+            check_stability<rational>();
             } else {
                 // Re-throw if it's not an overflow error
                 throw;
             }
-        }
-    } else {
-        check_stability<rational>(game_rational_, bee_rational_);
     }
 
     if (candidate_.is_ess)
@@ -137,6 +131,8 @@ void fracessa::search_one_support(const bitset64& support, size_t support_size, 
         logger_->info("{}", candidate::header());
         logger_->info("{}", candidate_.to_string());
     }
+    // BATCH: Collect support for batch removal
+    // supports_to_remove_.push_back(candidate_.support);
     // Remove all supersets for this support using Supports class
     supports_.remove_supersets(candidate_.support, support_size);
 
@@ -144,7 +140,7 @@ void fracessa::search_one_support(const bitset64& support, size_t support_size, 
 
         for (size_t i = 0; i < dimension_ - 1; i++) {
 
-            candidate_.support.rot_one_right(dimension_);
+            bs64::rot_one_right(candidate_.support, dimension_);
 
             candidate_.candidate_id++;
 
@@ -159,7 +155,7 @@ void fracessa::search_one_support(const bitset64& support, size_t support_size, 
                     candidate_.vector(j, 0) = candidate_.vector(j + 1, 0);
                 }
                 candidate_.vector(vec_size - 1, 0) = first;
-                candidate_.extended_support.rot_one_right(dimension_);
+                bs64::rot_one_right(candidate_.extended_support, dimension_);
                 candidates_.push_back(candidate_);
 
                 if (conf_with_log_) {
@@ -167,6 +163,8 @@ void fracessa::search_one_support(const bitset64& support, size_t support_size, 
                     logger_->info("{}", candidate_.to_string());
                 }
             }
+            // BATCH: Collect shifted support for batch removal
+            // supports_to_remove_.push_back(candidate_.support);
             // Remove all supersets for shifted support using Supports class
             supports_.remove_supersets(candidate_.support, support_size);
         }

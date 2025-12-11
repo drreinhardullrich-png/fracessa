@@ -517,9 +517,9 @@ inline void principal_submatrix(const Matrix<T>& A, size_t /*dimension*/, const 
 {
     // Only iterate over SET bits for efficiency
     size_t row = 0;
-    support.for_each_set_bit_no_exit([&](unsigned i) {
+    bs64::for_each_set_bit_no_exit(support, [&](unsigned i) {
         size_t col = 0;
-        support.for_each_set_bit_no_exit([&](unsigned j) {
+        bs64::for_each_set_bit_no_exit(support, [&](unsigned j) {
             submatrix(row, col) = A(static_cast<size_t>(i), static_cast<size_t>(j));
             ++col;
         });

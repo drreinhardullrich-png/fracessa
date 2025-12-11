@@ -95,6 +95,8 @@ endif()
 # Build configuration options
 option(BUILD_SHARED_LIBS "Build shared libraries instead of static" OFF)
 option(ENABLE_TESTING "Enable testing" OFF)
+option(BUILD_TESTING "Build unit tests" OFF)
+option(ENABLE_STATIC_LINKING "Enable static linking of all dependencies" OFF)
 
 # Add compiler warnings
 if(MSVC)
@@ -285,6 +287,62 @@ else()
     message(FATAL_ERROR "GMP library not found. Please install GMP: sudo apt-get install libgmp-dev libgmpxx4ldbl (or libgmpxx-dev)")
 endif()
 
+# Static linking support
+if(ENABLE_STATIC_LINKING)
+    message(STATUS "Static linking enabled - searching for static GMP libraries")
+    
+    # Find static GMP libraries
+    find_library(GMP_STATIC_LIB
+        NAMES libgmp.a gmp
+        PATHS
+            /usr/lib
+            /usr/lib/x86_64-linux-gnu
+            /usr/local/lib
+            /opt/homebrew/lib
+            /opt/local/lib
+        NO_DEFAULT_PATH
+    )
+    
+    find_library(GMPXX_STATIC_LIB
+        NAMES libgmpxx.a gmpxx
+        PATHS
+            /usr/lib
+            /usr/lib/x86_64-linux-gnu
+            /usr/local/lib
+            /opt/homebrew/lib
+            /opt/local/lib
+        NO_DEFAULT_PATH
+    )
+    
+    # Also try with default paths if not found
+    if(NOT GMP_STATIC_LIB)
+        find_library(GMP_STATIC_LIB NAMES libgmp.a gmp)
+    endif()
+    if(NOT GMPXX_STATIC_LIB)
+        find_library(GMPXX_STATIC_LIB NAMES libgmpxx.a gmpxx)
+    endif()
+    
+    if(GMP_STATIC_LIB AND GMPXX_STATIC_LIB)
+        set(GMP_LIBRARIES ${GMP_STATIC_LIB} ${GMPXX_STATIC_LIB})
+        message(STATUS "Found static GMP libraries: ${GMP_LIBRARIES}")
+        
+        # Add platform-specific static linker flags
+        if(UNIX AND NOT APPLE)
+            # Linux: fully static linking
+            set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static")
+            message(STATUS "Linux static linking enabled: -static")
+        elseif(APPLE)
+            # macOS: static libgcc/libstdc++ but dynamic system libraries
+            set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++")
+            message(STATUS "macOS static linking enabled: -static-libgcc -static-libstdc++")
+        endif()
+    else()
+        message(WARNING "Static linking requested but static GMP libraries not found. Falling back to dynamic linking.")
+        message(WARNING "GMP_STATIC_LIB: ${GMP_STATIC_LIB}, GMPXX_STATIC_LIB: ${GMPXX_STATIC_LIB}")
+    endif()
+endif()
+
+
 # Build the core library
 add_library(fracessa_lib
     src/fracessa.cpp
@@ -305,6 +363,14 @@ target_include_directories(fracessa_lib
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/fracessa>
         $<BUILD_INTERFACE:${argparse_SOURCE_DIR}/include>
         $<BUILD_INTERFACE:${spdlog_SOURCE_DIR}/include>
+        ${GMP_INCLUDE_DIR}
+    PRIVATE
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
+)
+
+# Boost libraries as system headers (suppresses deprecation warnings)
+target_include_directories(fracessa_lib
+    SYSTEM PUBLIC
         # Boost libraries (individual repos, core dependencies first)
         $<BUILD_INTERFACE:${boost_config_SOURCE_DIR}/include>
         $<BUILD_INTERFACE:${boost_predef_SOURCE_DIR}/include>
@@ -317,13 +383,14 @@ target_include_directories(fracessa_lib
         $<BUILD_INTERFACE:${boost_math_SOURCE_DIR}/include>
         $<BUILD_INTERFACE:${boost_integer_SOURCE_DIR}/include>
         $<BUILD_INTERFACE:${boost_algorithm_SOURCE_DIR}/include>
-        ${GMP_INCLUDE_DIR}
-    PRIVATE
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
 )
+
+# Suppress Boost deprecation pragma messages
+target_compile_definitions(fracessa_lib PRIVATE BOOST_ALLOW_DEPRECATED_HEADERS)
 
 # Link GMP library
 target_link_libraries(fracessa_lib PRIVATE ${GMP_LIBRARIES})
+
 
 # Platform-specific configuration
 if(UNIX AND NOT APPLE)
@@ -334,9 +401,12 @@ if(UNIX AND NOT APPLE)
 
     target_include_directories(fracessa PRIVATE 
         ${argparse_SOURCE_DIR}/include
-        ${boost_math_SOURCE_DIR}/include
         ${GMP_INCLUDE_DIR}
     )
+    target_include_directories(fracessa SYSTEM PRIVATE 
+        ${boost_math_SOURCE_DIR}/include
+    )
+    target_compile_definitions(fracessa PRIVATE BOOST_ALLOW_DEPRECATED_HEADERS)
     target_link_libraries(fracessa PRIVATE fracessa_lib ${GMP_LIBRARIES})
 
     # Install targets
@@ -357,9 +427,12 @@ elseif(WIN32 OR MSVC OR MSYS OR MINGW)
 
     target_include_directories(fracessa PRIVATE 
         ${argparse_SOURCE_DIR}/include
-        ${boost_math_SOURCE_DIR}/include
         ${GMP_INCLUDE_DIR}
     )
+    target_include_directories(fracessa SYSTEM PRIVATE 
+        ${boost_math_SOURCE_DIR}/include
+    )
+    target_compile_definitions(fracessa PRIVATE BOOST_ALLOW_DEPRECATED_HEADERS)
     target_link_libraries(fracessa PRIVATE fracessa_lib ${GMP_LIBRARIES})
 
     # Install targets
@@ -381,4 +454,18 @@ if(ENABLE_TESTING)
     enable_testing()
     # Add test subdirectory if tests are added later
     # add_subdirectory(tests)
+endif()
+
+# Testing (optional, enabled with -DBUILD_TESTING=ON)
+if(BUILD_TESTING)
+    enable_testing()
+    
+    FetchContent_Declare(
+        googletest
+        GIT_REPOSITORY https://github.com/google/googletest.git
+        GIT_TAG v1.14.0
+    )
+    FetchContent_MakeAvailable(googletest)
+    
+    add_subdirectory(tests)
 endif()

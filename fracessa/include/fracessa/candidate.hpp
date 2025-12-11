@@ -32,9 +32,9 @@ class candidate
             }
             if (vector.rows() > 0)
                 str.pop_back();
-            str += ";" + support.to_string() + ";";
+            str += ";" + bs64::to_string(support) + ";";
             str += std::to_string(support_size) + ";";
-            str += extended_support.to_string() + ";";
+            str += bs64::to_string(extended_support) + ";";
             str += std::to_string(extended_support_size) + ";";
             str += std::to_string(shift_reference) + ";";
             str += std::to_string(is_ess) + ";";

@@ -11,7 +11,7 @@
 // Hash function for bitset64 to use with std::unordered_map
 struct bitset64_hash {
     std::size_t operator()(const bitset64& bs) const noexcept {
-        return bs.hash();
+        return bs64::hash(bs);
     }
 };
 
@@ -31,11 +31,11 @@ private:
             return it->second;
         }
 
-        size_t current_dim = mask.count();
+        size_t current_dim = bs64::count(mask);
 
         // 2. Base Case: 1x1 Matrix
         if (current_dim == 1) {
-            unsigned idx = mask.find_first();
+            unsigned idx = bs64::find_first(mask);
             // Check if diagonal element > 0 (Rational comparison)
             bool result = A(static_cast<size_t>(idx), static_cast<size_t>(idx)) > T(0);
             memo[mask] = result;
@@ -44,9 +44,9 @@ private:
 
         // 3. Recursive Step: Check all submatrices of size (current_dim - 1)
         // We iterate ONLY over the bits that are currently set to turn them off one by one
-        if (!mask.for_each_set_bit([&](unsigned i) {
+        if (!bs64::for_each_set_bit(mask, [&](unsigned i) {
             bitset64 sub_mask = mask;
-            sub_mask.reset(i); // Turn off bit i representing row/col i
+            bs64::reset(sub_mask, i); // Turn off bit i representing row/col i
             return checkRecursive(A, sub_mask); // Return false to stop early if check fails
         })) {
             memo[mask] = false; // Fail early
@@ -101,8 +101,8 @@ public:
         memo.reserve(1ULL << n);
         
         // Create mask with lower n bits set
-        bitset64 full_mask;
-        full_mask.set_all(static_cast<unsigned>(n));
+        bitset64 full_mask = 0ULL;
+        bs64::set_all(full_mask, static_cast<unsigned>(n));
 
         return checkRecursive(A, full_mask);
     }

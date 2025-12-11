@@ -2,11 +2,11 @@
 #define RATIONAL_LINALG_ADJUGATE_HPP
 
 #include <rational_linalg/matrix.hpp>
-#include <rational_linalg/bareiss_lu.hpp>
+#include <rational_linalg/lu.hpp>
 
 namespace rational_linalg {
 
-// Compute adjugate using cofactor expansion with BareissLUFactor
+// Compute adjugate using cofactor expansion with LUFactor
 template<typename T>
 inline Matrix<T> adjugate(const Matrix<T>& A) {
     const size_t n = A.rows();
@@ -43,8 +43,8 @@ inline Matrix<T> adjugate(const Matrix<T>& A) {
                 ++minor_row;
             }
             
-            // Compute determinant of minor using BareissLUFactor
-            BareissLUFactor<T> lu(minor);
+            // Compute determinant of minor using LUFactor
+            LUFactor<T> lu(minor);
             T det_minor = lu.determinant();
             
             // Compute cofactor: (-1)^(i+j) * det(M_ij)
