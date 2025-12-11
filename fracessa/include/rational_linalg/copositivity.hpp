@@ -2,7 +2,6 @@
 #define RATIONAL_LINALG_COPOSITIVITY_HPP
 
 #include <rational_linalg/matrix.hpp>
-#include <rational_linalg/matrix.hpp>
 #include <rational_linalg/bareiss_lu.hpp>
 #include <rational_linalg/adjugate.hpp>
 #include <fracessa/bitset64.hpp>

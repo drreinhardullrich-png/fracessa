@@ -207,29 +207,29 @@ FetchContent_Declare(
     GIT_SHALLOW    TRUE
 )
 
-# rational (needed for boost/rational.hpp)
-FetchContent_Declare(
-    boost_rational
-    GIT_REPOSITORY https://github.com/boostorg/rational.git
-    GIT_TAG        boost-1.89.0
-    GIT_SHALLOW    TRUE
-)
+# COMMENTED OUT: boost_rational - unused (all code using boost::rational is commented out)
+# FetchContent_Declare(
+#     boost_rational
+#     GIT_REPOSITORY https://github.com/boostorg/rational.git
+#     GIT_TAG        boost-1.89.0
+#     GIT_SHALLOW    TRUE
+# )
 
-# safe_numerics (needed for boost/safe_numerics/safe_integer.hpp)
-FetchContent_Declare(
-    boost_safe_numerics
-    GIT_REPOSITORY https://github.com/boostorg/safe_numerics.git
-    GIT_TAG        boost-1.89.0
-    GIT_SHALLOW    TRUE
-)
+# COMMENTED OUT: boost_safe_numerics - unused (all code using boost::safe_numerics is commented out)
+# FetchContent_Declare(
+#     boost_safe_numerics
+#     GIT_REPOSITORY https://github.com/boostorg/safe_numerics.git
+#     GIT_TAG        boost-1.89.0
+#     GIT_SHALLOW    TRUE
+# )
 
-# utility (needed for boost/call_traits.hpp and boost/operators.hpp)
-FetchContent_Declare(
-    boost_utility
-    GIT_REPOSITORY https://github.com/boostorg/utility.git
-    GIT_TAG        boost-1.89.0
-    GIT_SHALLOW    TRUE
-)
+# COMMENTED OUT: boost_utility - only needed for boost_rational (which is unused)
+# FetchContent_Declare(
+#     boost_utility
+#     GIT_REPOSITORY https://github.com/boostorg/utility.git
+#     GIT_TAG        boost-1.89.0
+#     GIT_SHALLOW    TRUE
+# )
 
 # Make all dependencies available (core dependencies first)
 FetchContent_MakeAvailable(
@@ -246,9 +246,9 @@ FetchContent_MakeAvailable(
     boost_math 
     boost_integer 
     boost_algorithm
-    boost_rational
-    boost_safe_numerics
-    boost_utility
+    # boost_rational - commented out (unused)
+    # boost_safe_numerics - commented out (unused)
+    # boost_utility - commented out (only needed for boost_rational)
 )
 
 message(STATUS "Using Boost 1.89.0 headers (from FetchContent)")
@@ -439,9 +439,9 @@ target_include_directories(fracessa_lib
         $<BUILD_INTERFACE:${boost_math_SOURCE_DIR}/include>
         $<BUILD_INTERFACE:${boost_integer_SOURCE_DIR}/include>
         $<BUILD_INTERFACE:${boost_algorithm_SOURCE_DIR}/include>
-        $<BUILD_INTERFACE:${boost_rational_SOURCE_DIR}/include>
-        $<BUILD_INTERFACE:${boost_safe_numerics_SOURCE_DIR}/include>
-        $<BUILD_INTERFACE:${boost_utility_SOURCE_DIR}/include>
+        # boost_rational - commented out (unused)
+        # boost_safe_numerics - commented out (unused)
+        # boost_utility - commented out (only needed for boost_rational)
 )
 
 # Suppress Boost deprecation pragma messages

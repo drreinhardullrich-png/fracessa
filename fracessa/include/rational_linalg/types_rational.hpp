@@ -3,9 +3,11 @@
 
 #include <cstdint>
 #include <type_traits>
-#include <boost/rational.hpp>
-#include <boost/safe_numerics/safe_integer.hpp>
-#include <boost/safe_numerics/exception_policies.hpp>
+// COMMENTED OUT: Unused - all code using boost::rational is commented out (now using mpq_class and rational64)
+// #include <boost/rational.hpp>
+// COMMENTED OUT: Unused - all code using boost::safe_numerics is commented out (now using rational64)
+// #include <boost/safe_numerics/safe_integer.hpp>
+// #include <boost/safe_numerics/exception_policies.hpp>
 #include <string>
 #include <sstream>
 
