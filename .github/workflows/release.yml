@@ -1,235 +1,147 @@
-name: Build and Release
+name: Build
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
 
 jobs:
-  build:
-    permissions:
-      contents: write
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            artifact_name: fracessa-linux-x64
-            binary_path: fracessa/build/fracessa
-          - os: macos-latest
-            artifact_name: fracessa-macos-x64
-            binary_path: fracessa/build/fracessa
-          - os: windows-latest
-            artifact_name: fracessa-windows-x64
-            binary_path: fracessa/build/Release/fracessa.exe
-    
-    runs-on: ${{ matrix.os }}
+  # ============================================================================
+  # Linux Build (Ubuntu 20.04 for glibc 2.31 compatibility)
+  # ============================================================================
+  build-linux:
+    runs-on: ubuntu-20.04  # glibc 2.31 - works on most systems from 2020+
     
     steps:
-      # ------------------------------------------------
-      # 1. Checkout Source Code
-      # ------------------------------------------------
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-      
-      # ------------------------------------------------
-      # 2. Install Dependencies
-      # ------------------------------------------------
-      - name: Install Dependencies (Linux)
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            cmake \
-            g++ \
-            libgmp-dev \
-            libgmpxx4ldbl
-      
-      - name: Install Dependencies (macOS)
-        if: matrix.os == 'macos-latest'
-        run: |
-          brew install gmp
-          
-          # Locate the installation prefix for gmp
-          # The prefix is the root directory where the package was installed (e.g., /opt/homebrew)
-          GMP_PREFIX=$(brew --prefix gmp)
-          
-          # Export the necessary environment variables for CMake to find GMP
-          # These variables are standard hints for CMake's FindGMP module
-          echo "GMP_ROOT=$GMP_PREFIX" >> $GITHUB_ENV
-          echo "GMP_INCLUDE_DIR=$GMP_PREFIX/include" >> $GITHUB_ENV
-          echo "GMP_LIBRARY_DIR=$GMP_PREFIX/lib" >> $GITHUB_ENV
-          echo "GMP_PREFIX=$GMP_PREFIX" >> $GITHUB_ENV
-          
-          # Verify GMP installation
-          echo "GMP installed at: $GMP_PREFIX"
-          echo "GMP include dir: $GMP_PREFIX/include"
-          ls -la $GMP_PREFIX/include/gmp*.h || echo "Warning: GMP headers not found in expected location"
-      
-      - name: Install Dependencies (Windows)
-        if: matrix.os == 'windows-latest'
-        run: |
-          echo Installing vcpkg and GMP static libraries...
-          if not exist C:\vcpkg (
-            git clone https://github.com/Microsoft/vcpkg.git C:\vcpkg
-          )
-          if not exist C:\vcpkg\vcpkg.exe (
-            C:\vcpkg\bootstrap-vcpkg.bat
-          )
-          C:\vcpkg\vcpkg integrate install
-          echo Installing gmp:x64-windows-static...
-          C:\vcpkg\vcpkg install gmp:x64-windows-static --triplet x64-windows-static
-          echo GMP installation complete
-        shell: cmd
-      
-      # ------------------------------------------------
-      # 3. Configure CMake
-      # ------------------------------------------------
-      - name: Configure CMake (Linux/macOS)
-        if: matrix.os != 'windows-latest'
-        working-directory: fracessa
-        run: |
-          echo "Configuring CMake with static linking..."
-          cmake -B build -S . \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DBUILD_TESTING=OFF \
-            -DENABLE_STATIC_LINKING=ON
-          echo "CMake configuration output:"
-          cmake -B build -S . -L | grep -E "(GMP|STATIC|LINKER)" || true
-      
-      - name: Configure CMake (Windows)
-        if: matrix.os == 'windows-latest'
-        working-directory: fracessa
-        run: |
-          echo Configuring CMake with static linking...
-          cmake -B build -S . \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DBUILD_TESTING=OFF \
-            -DENABLE_STATIC_LINKING=ON \
-            -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
-          echo CMake configuration complete
-        shell: cmd
-      
-      # ------------------------------------------------
-      # 4. Build Project
-      # ------------------------------------------------
-      - name: Build Project
-        working-directory: fracessa
-        run: |
-          echo "Building project..."
-          cmake --build build --config Release --parallel
-          echo "Build completed successfully"
-      
-      # ------------------------------------------------
-      # 5. Verify Static Linking
-      # ------------------------------------------------
-      - name: Verify Static Linking (Linux)
-        if: matrix.os == 'ubuntu-latest'
-        working-directory: fracessa
-        run: |
-          if [ ! -f build/fracessa ]; then
-            echo "ERROR: Binary not found at build/fracessa"
-            exit 1
-          fi
-          if command -v ldd &> /dev/null; then
-            echo "Checking dynamic dependencies:"
-            ldd build/fracessa || echo "Binary is statically linked (no dynamic dependencies)"
-            # Check if libgmp is in the dependencies
-            if ldd build/fracessa 2>/dev/null | grep -q libgmp; then
-              echo "WARNING: Binary still depends on libgmp dynamically!"
-              echo "This may be acceptable if static libraries weren't available."
-              echo "Dependencies:"
-              ldd build/fracessa | grep libgmp || true
-            else
-              echo "SUCCESS: Binary does not depend on libgmp (GMP is statically linked)"
-            fi
-          else
-            echo "ldd not available, skipping verification"
-          fi
-      
-      - name: Verify Static Linking (macOS)
-        if: matrix.os == 'macos-latest'
-        working-directory: fracessa
-        run: |
-          if [ ! -f build/fracessa ]; then
-            echo "ERROR: Binary not found at build/fracessa"
-            exit 1
-          fi
-          if command -v otool &> /dev/null; then
-            echo "Checking dynamic dependencies:"
-            otool -L build/fracessa
-            # Check if libgmp is in the dependencies (should only see system libraries)
-            if otool -L build/fracessa | grep -q "libgmp"; then
-              echo "WARNING: Binary may still depend on libgmp dynamically"
-            else
-              echo "SUCCESS: Binary appears to be statically linked (no libgmp dependency)"
-            fi
-          else
-            echo "otool not available, skipping verification"
-          fi
-      
-      - name: Verify Static Linking (Windows)
-        if: matrix.os == 'windows-latest'
-        working-directory: fracessa
-        run: |
-          # Check if binary exists in Release directory
-          if exist build\Release\fracessa.exe (
-            echo Binary found in build\Release\fracessa.exe
-            set BINARY_PATH=build\Release\fracessa.exe
-          ) else if exist build\fracessa.exe (
-            echo Binary found in build\fracessa.exe
-            set BINARY_PATH=build\fracessa.exe
-          ) else (
-            echo ERROR: Binary not found!
-            exit /b 1
-          )
-          echo BINARY_PATH=%BINARY_PATH% >> %GITHUB_ENV%
-          echo "Binary location verified: %BINARY_PATH%"
-        shell: cmd
-      
-      # ------------------------------------------------
-      # 6. Package Binary
-      # ------------------------------------------------
-      - name: Package Binary (Linux/macOS)
-        if: matrix.os != 'windows-latest'
-        working-directory: fracessa
-        run: |
-          # Create archive with binary
-          ARCHIVE_NAME="${{ matrix.artifact_name }}.tar.gz"
-          tar -czf $ARCHIVE_NAME -C build fracessa
-          echo "ARCHIVE_NAME=$ARCHIVE_NAME" >> $GITHUB_ENV
-          echo "ARCHIVE_PATH=fracessa/$ARCHIVE_NAME" >> $GITHUB_ENV
-      
-      - name: Package Binary (Windows)
-        if: matrix.os == 'windows-latest'
-        working-directory: fracessa
-        run: |
-          # Determine binary path (check both locations)
-          if exist build\Release\fracessa.exe (
-            set BINARY_PATH=build\Release\fracessa.exe
-          ) else if exist build\fracessa.exe (
-            set BINARY_PATH=build\fracessa.exe
-          ) else (
-            echo ERROR: Binary not found in expected locations!
-            exit /b 1
-          )
-          # Create zip archive with binary
-          set ARCHIVE_NAME={{ matrix.artifact_name }}.zip
-          powershell Compress-Archive -Path %BINARY_PATH% -DestinationPath %ARCHIVE_NAME%
-          echo ARCHIVE_NAME=%ARCHIVE_NAME% >> %GITHUB_ENV%
-          echo ARCHIVE_PATH=fracessa\%ARCHIVE_NAME% >> %GITHUB_ENV%
-        shell: cmd
-      
-      # ------------------------------------------------
-      # 7. Upload Release Asset
-      # ------------------------------------------------
-      - name: Upload Release Asset
-        uses: softprops/action-gh-release@v2
-        with:
-          files: ${{ env.ARCHIVE_PATH }}
-          draft: false
-          prerelease: ${{ contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha') || contains(github.ref_name, 'rc') }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - uses: actions/checkout@v4
+    
+    - name: Install GMP
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libgmp-dev libgmpxx4ldbl
+    
+    - name: Configure CMake
+      working-directory: fracessa
+      run: |
+        cmake -B build \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DENABLE_STATIC_LINKING=ON
+    
+    - name: Build
+      working-directory: fracessa
+      run: cmake --build build --parallel $(nproc)
+    
+    - name: Test
+      working-directory: fracessa
+      run: |
+        cd build
+        ./fracessa --help
+    
+    - name: Upload Linux Binary
+      uses: actions/upload-artifact@v4
+      with:
+        name: fracessa-linux-x86_64
+        path: fracessa/build/fracessa
+        retention-days: 30
+
+  # ============================================================================
+  # macOS Build
+  # ============================================================================
+  build-macos:
+    runs-on: macos-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install GMP
+      run: brew install gmp
+    
+    - name: Configure CMake
+      working-directory: fracessa
+      run: |
+        cmake -B build \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DENABLE_STATIC_LINKING=ON
+    
+    - name: Build
+      working-directory: fracessa
+      run: cmake --build build --parallel $(sysctl -n hw.ncpu)
+    
+    - name: Test
+      working-directory: fracessa
+      run: |
+        cd build
+        ./fracessa --help
+    
+    - name: Upload macOS Binary
+      uses: actions/upload-artifact@v4
+      with:
+        name: fracessa-macos-arm64
+        path: fracessa/build/fracessa
+        retention-days: 30
+
+  # ============================================================================
+  # Windows Build with vcpkg
+  # ============================================================================
+  build-windows:
+    runs-on: windows-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup vcpkg
+      uses: lukka/run-vcpkg@v11
+      with:
+        vcpkgGitCommitId: 'a42af01b72c28a8e1d7b48107b33e4f286a55ef6'  # Latest stable
+    
+    - name: Install GMP via vcpkg
+      run: |
+        vcpkg install gmp:x64-windows-static gmpxx:x64-windows-static
+    
+    - name: Configure CMake
+      working-directory: fracessa
+      run: |
+        cmake -B build `
+          -DCMAKE_BUILD_TYPE=Release `
+          -DENABLE_STATIC_LINKING=ON `
+          -DCMAKE_TOOLCHAIN_FILE="${env:VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" `
+          -DVCPKG_TARGET_TRIPLET=x64-windows-static
+    
+    - name: Build
+      working-directory: fracessa
+      run: cmake --build build --config Release --parallel
+    
+    - name: Test
+      working-directory: fracessa
+      run: |
+        cd build/Release
+        ./fracessa.exe --help
+    
+    - name: Upload Windows Binary
+      uses: actions/upload-artifact@v4
+      with:
+        name: fracessa-windows-x86_64
+        path: fracessa/build/Release/fracessa.exe
+        retention-days: 30
+
+  # ============================================================================
+  # Linux Old Compatibility Test (Ubuntu 18.04 - glibc 2.27)
+  # ============================================================================
+  test-old-linux:
+    needs: build-linux
+    runs-on: ubuntu-18.04  # Test on older system
+    
+    steps:
+    - name: Download Linux Binary
+      uses: actions/download-artifact@v4
+      with:
+        name: fracessa-linux-x86_64
+    
+    - name: Make executable
+      run: chmod +x fracessa
+    
+    - name: Test on Ubuntu 18.04
+      run: |
+        ./fracessa --help
+        echo "✓ Binary works on Ubuntu 18.04 (glibc 2.27)"
