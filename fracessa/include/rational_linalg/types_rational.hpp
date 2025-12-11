@@ -144,8 +144,9 @@ inline rational small_to_rational(const small_rational& val) {
     // Extract underlying int64_t values from rational64
     int64_t num = val.numerator();
     int64_t den = val.denominator();
-    // Construct rational from numerator and denominator
-    return rational(num) / rational(den);
+    // Construct rational from numerator and denominator using two-parameter constructor
+    // This avoids ambiguous conversion on macOS where int64_t is long long
+    return rational(num, den);
 }
 
 
