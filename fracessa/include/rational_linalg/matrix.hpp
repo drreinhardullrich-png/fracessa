@@ -564,11 +564,11 @@ inline bool is_positive_definite_rational(const Matrix<T>& A)
 // Check if all entries of a matrix are greater than zero
 template<typename T>
 inline bool all_entries_greater_zero(const Matrix<T>& A) {
-    for (size_t i = 0; i < A.rows(); ++i) {
-        for (size_t j = 0; j < A.cols(); ++j) {
-            if (A(i, j) <= T(0)) {
-                return false;
-            }
+    const size_t n = A.rows() * A.cols();
+    const T* data = A.data();
+    for (size_t i = 0; i < n; ++i) {
+        if (data[i] <= T(0)) {
+            return false;
         }
     }
     return true;
