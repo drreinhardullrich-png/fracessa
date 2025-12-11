@@ -277,6 +277,19 @@ if(PkgConfig_FOUND)
     if(GMP_FOUND AND GMPXX_LIBRARIES)
         set(GMP_LIBRARIES ${GMP_LIBRARIES} ${GMPXX_LIBRARIES})
     endif()
+    # pkg-config might not set GMP_INCLUDE_DIR, so ensure it's set
+    # pkg_check_modules sets GMP_INCLUDE_DIRS (plural), not GMP_INCLUDE_DIR (singular)
+    if(GMP_FOUND AND (NOT GMP_INCLUDE_DIR OR GMP_INCLUDE_DIR STREQUAL ""))
+        if(GMP_INCLUDE_DIRS)
+            # Use the first include directory from pkg-config
+            list(GET GMP_INCLUDE_DIRS 0 GMP_INCLUDE_DIR)
+            message(STATUS "Using GMP_INCLUDE_DIR from pkg-config: ${GMP_INCLUDE_DIR}")
+        else()
+            # pkg-config didn't provide it, unset GMP_FOUND to trigger manual search
+            set(GMP_FOUND FALSE)
+            message(STATUS "pkg-config found GMP but didn't provide GMP_INCLUDE_DIRS, falling back to manual search")
+        endif()
+    endif()
 endif()
 
 if(NOT GMP_FOUND)
@@ -396,8 +409,25 @@ if(GMP_FOUND)
     message(STATUS "Found GMP: ${GMP_LIBRARIES}")
     message(STATUS "GMP include dir: ${GMP_INCLUDE_DIR}")
     # Validate that GMP_INCLUDE_DIR is set and non-empty
-    if(NOT GMP_INCLUDE_DIR OR GMP_INCLUDE_DIR STREQUAL "GMP_INCLUDE_DIR-NOTFOUND")
-        message(FATAL_ERROR "GMP_INCLUDE_DIR is not set or invalid: ${GMP_INCLUDE_DIR}")
+    # If pkg-config found GMP but didn't set GMP_INCLUDE_DIR, search for it now
+    if(NOT GMP_INCLUDE_DIR OR GMP_INCLUDE_DIR STREQUAL "GMP_INCLUDE_DIR-NOTFOUND" OR GMP_INCLUDE_DIR STREQUAL "")
+        message(STATUS "GMP_FOUND is TRUE but GMP_INCLUDE_DIR is missing, searching for it...")
+        # Try common include paths
+        find_path(GMP_INCLUDE_DIR NAMES gmpxx.h
+            PATHS
+                /usr/include
+                /usr/local/include
+                /opt/local/include
+                /opt/homebrew/include
+        )
+        # If still not found, try without NO_DEFAULT_PATH to allow compiler defaults
+        if(NOT GMP_INCLUDE_DIR OR GMP_INCLUDE_DIR STREQUAL "GMP_INCLUDE_DIR-NOTFOUND")
+            find_path(GMP_INCLUDE_DIR NAMES gmpxx.h)
+        endif()
+    endif()
+    # Final validation
+    if(NOT GMP_INCLUDE_DIR OR GMP_INCLUDE_DIR STREQUAL "GMP_INCLUDE_DIR-NOTFOUND" OR GMP_INCLUDE_DIR STREQUAL "")
+        message(FATAL_ERROR "GMP_INCLUDE_DIR is not set or invalid: '${GMP_INCLUDE_DIR}'")
     endif()
     # Verify the header file actually exists
     if(NOT EXISTS "${GMP_INCLUDE_DIR}/gmpxx.h")
