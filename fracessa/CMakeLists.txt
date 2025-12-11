@@ -223,6 +223,14 @@ FetchContent_Declare(
     GIT_SHALLOW    TRUE
 )
 
+# utility (needed for boost/call_traits.hpp and boost/operators.hpp)
+FetchContent_Declare(
+    boost_utility
+    GIT_REPOSITORY https://github.com/boostorg/utility.git
+    GIT_TAG        boost-1.89.0
+    GIT_SHALLOW    TRUE
+)
+
 # Make all dependencies available (core dependencies first)
 FetchContent_MakeAvailable(
     spdlog 
@@ -240,6 +248,7 @@ FetchContent_MakeAvailable(
     boost_algorithm
     boost_rational
     boost_safe_numerics
+    boost_utility
 )
 
 message(STATUS "Using Boost 1.89.0 headers (from FetchContent)")
@@ -432,6 +441,7 @@ target_include_directories(fracessa_lib
         $<BUILD_INTERFACE:${boost_algorithm_SOURCE_DIR}/include>
         $<BUILD_INTERFACE:${boost_rational_SOURCE_DIR}/include>
         $<BUILD_INTERFACE:${boost_safe_numerics_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${boost_utility_SOURCE_DIR}/include>
 )
 
 # Suppress Boost deprecation pragma messages
