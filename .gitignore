@@ -84,3 +84,13 @@ third_party/
 # Profiling reports
 callgrind_reports/
 gprof_reports/
+
+# Cursor IDE files
+.cursor/
+.cursorignore
+
+# Old/backup code
+zzz_old/
+
+# Papers/documentation
+papers/
