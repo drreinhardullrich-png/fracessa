@@ -283,24 +283,44 @@ if(NOT GMP_FOUND)
     # Fall back to manual search
     if(APPLE)
         # macOS: Check GMP_INCLUDE_DIR environment variable FIRST (set by CI)
-        # Then check GMP_ROOT, then fall back to standard Homebrew paths
-        if(DEFINED ENV{GMP_INCLUDE_DIR})
-            set(SEARCH_PATHS $ENV{GMP_INCLUDE_DIR})
-            message(STATUS "Using GMP_INCLUDE_DIR from environment: ${SEARCH_PATHS}")
-        elseif(DEFINED ENV{GMP_ROOT})
-            set(SEARCH_PATHS $ENV{GMP_ROOT}/include)
-            message(STATUS "Using GMP_ROOT from environment: $ENV{GMP_ROOT}")
-        elseif(DEFINED GMP_ROOT)
-            set(SEARCH_PATHS ${GMP_ROOT}/include)
-            message(STATUS "Using GMP_ROOT variable: ${GMP_ROOT}")
-        else()
-            set(SEARCH_PATHS /opt/homebrew/include /usr/local/include /opt/local/include)
-            message(STATUS "Using default Homebrew paths: ${SEARCH_PATHS}")
+        # If set, use it directly without searching
+        if(DEFINED ENV{GMP_INCLUDE_DIR} AND NOT "$ENV{GMP_INCLUDE_DIR}" STREQUAL "")
+            set(GMP_INCLUDE_DIR $ENV{GMP_INCLUDE_DIR})
+            message(STATUS "Using GMP_INCLUDE_DIR directly from environment: ${GMP_INCLUDE_DIR}")
+            # Verify the header exists
+            if(NOT EXISTS "${GMP_INCLUDE_DIR}/gmpxx.h")
+                message(WARNING "GMP_INCLUDE_DIR set but gmpxx.h not found at: ${GMP_INCLUDE_DIR}/gmpxx.h")
+                unset(GMP_INCLUDE_DIR)
+            else()
+                message(STATUS "Verified GMP header exists: ${GMP_INCLUDE_DIR}/gmpxx.h")
+            endif()
+        endif()
+        
+        # If GMP_INCLUDE_DIR not set from environment, search for it
+        if(NOT GMP_INCLUDE_DIR OR GMP_INCLUDE_DIR STREQUAL "")
+            # Determine search paths
+            if(DEFINED ENV{GMP_ROOT})
+                set(SEARCH_PATHS $ENV{GMP_ROOT}/include)
+                message(STATUS "Searching for GMP_INCLUDE_DIR using GMP_ROOT from environment: $ENV{GMP_ROOT}")
+            elseif(DEFINED GMP_ROOT)
+                set(SEARCH_PATHS ${GMP_ROOT}/include)
+                message(STATUS "Searching for GMP_INCLUDE_DIR using GMP_ROOT variable: ${GMP_ROOT}")
+            else()
+                set(SEARCH_PATHS /opt/homebrew/include /usr/local/include /opt/local/include)
+                message(STATUS "Searching for GMP_INCLUDE_DIR in default Homebrew paths: ${SEARCH_PATHS}")
+            endif()
+            
+            # Look for the C++ header file
+            find_path(GMP_INCLUDE_DIR NAMES gmpxx.h
+                PATHS
+                    ${SEARCH_PATHS}
+            )
         endif()
         
         # Set library search paths
-        if(DEFINED ENV{GMP_LIBRARIES_DIR})
+        if(DEFINED ENV{GMP_LIBRARIES_DIR} AND NOT "$ENV{GMP_LIBRARIES_DIR}" STREQUAL "")
             set(LIB_SEARCH_PATHS $ENV{GMP_LIBRARIES_DIR})
+            message(STATUS "Using GMP_LIBRARIES_DIR from environment: ${LIB_SEARCH_PATHS}")
         elseif(DEFINED ENV{GMP_ROOT})
             set(LIB_SEARCH_PATHS $ENV{GMP_ROOT}/lib)
         elseif(DEFINED GMP_ROOT)
@@ -309,15 +329,7 @@ if(NOT GMP_FOUND)
             set(LIB_SEARCH_PATHS /opt/homebrew/lib /usr/local/lib /opt/local/lib)
         endif()
         
-        message(STATUS "Searching for GMP headers in: ${SEARCH_PATHS}")
         message(STATUS "Searching for GMP libraries in: ${LIB_SEARCH_PATHS}")
-        
-        # Look for the C++ header file (which is the source of the error)
-        # Remove NO_DEFAULT_PATH to allow compiler to fall back to system defaults
-        find_path(GMP_INCLUDE_DIR NAMES gmpxx.h
-            PATHS
-                ${SEARCH_PATHS}
-        )
         
         # Look for both the C library and the C++ library
         find_library(GMP_LIB NAMES gmp PATHS ${LIB_SEARCH_PATHS})
